@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# Xcode build output
+build/
+DerivedData/
+*.hmap
+*.dSYM
+*.dSYM.zip
+
+# Xcode per-user state (window layout, breakpoints, scheme selection).
+# Never share these; they cause conflicts and hold no project information.
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager (Sparkle arrives this way in Phase 5)
+.build/
+.swiftpm/
+
+# Distribution artifacts (Phase 5 release script output)
+*.ipa
+*.app.zip
+*.dmg
+dist/
+default.profraw
+
+# Private working files: AI-assistant config and internal planning docs.
+# They stay on disk for local work and are never published.
+.claude/
+.agents/
+skills-lock.json
+CLAUDE.md
+AGENTS.md
+PROJECT-CONTEXT.md
+ROADMAP.md
+REFERENCES.md
+docs/*.md
