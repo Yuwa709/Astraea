@@ -16,7 +16,7 @@ Move the cursor away and it disappears back into the bezel.
 <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Yuwa709/PopNotch?style=for-the-badge&color=34C759"></a>
 <a href="https://github.com/Yuwa709/PopNotch/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Yuwa709/PopNotch?style=for-the-badge&logo=github&color=FFD60A"></a>
 
-[**Download**](https://github.com/Yuwa709/PopNotch/releases/latest) · [Features](#features) · [Install](#install) · [Build from source](#build-from-source) · [Privacy](#privacy)
+[**Download**](https://github.com/Yuwa709/PopNotch/releases/latest) · [Features](#features) · [Install](#install) · [Build from source](#build-from-source) · [Privacy](#privacy) · [Release history](#release-history)
 
 </div>
 
@@ -147,6 +147,25 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 ```
 
 </details>
+
+## Release history
+
+| Version | Released | Highlights |
+|:---:|:---:|---|
+| [**1.2.3**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.2.3) <br><sub>Latest</sub> | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
+| **1.2.2** | Oct 10, 2026 | Mixer sliders can turn apps **up to 2×**, with a limiter so nothing clips. The new battery page shows **time until full or empty** and live power draw. Battery readings work on macOS 27. |
+| **1.2.1** | Sep 30, 2026 | **Per-app bass boost** at +6, +12 or +18 dB. **Up Next** for Apple Music playlists and albums. |
+| **1.2.0** | Sep 28, 2026 | **Per-app output routing**, to send each app to its own speakers or headphones. Spotify account sign-in removed, which ends the keychain prompts. New Open Anyway install flow. |
+| **1.1.0** | Sep 20, 2026 | **Per-app volume mixer**, to adjust individual apps from the notch. |
+| **1.0.9** | Sep 16, 2026 | Redesigned expanded player: the scrub bar is a **live audio waveform**, the artwork is larger, and lyrics show one line at a time. |
+| **1.0.8** | Sep 16, 2026 | Lower CPU use while the notch is open. The waveform respects **Reduce Motion**. |
+| **1.0.7** | Sep 15, 2026 | Fixed background timers that drained the battery after the notch closed. Idle CPU with music playing is down about 40%. |
+| **1.0.6** | Sep 8, 2026 | **Shuffle and repeat** for Spotify. The panel stays in sync with changes made in the player. Smoother corners on collapse. |
+| **1.0.5** | Sep 2, 2026 | Fixed the stats page leaving timers running after it closed. |
+| **1.0.4** | Sep 2, 2026 | **Browsers and YouTube Music** in Now Playing, with nothing extra to install. Spotify and Apple Music keep priority. |
+| **1.0.3** | Sep 1, 2026 | Browser playback paused while it was reworked; it returned in 1.0.4. Internal files no longer ship in the app bundle. |
+| **1.0.2** | Sep 1, 2026 | A dedicated **system stats and battery page**. Browser players in Now Playing. Buttons no longer hide behind the camera housing. |
+| **1.0.1** | Aug 31, 2026 | 🎉 **First public release.** |
 
 ## License
 
