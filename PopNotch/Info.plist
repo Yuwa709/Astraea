@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>PopNotch uses the camera to enrol your face for Face Unlock. Frames are processed on your Mac and never saved.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>PopNotch reads system audio to display a live music visualizer.</string>
 	<key>SUFeedURL</key>

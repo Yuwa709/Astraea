@@ -28,7 +28,10 @@ struct AppSettings: Codable, Equatable {
     /// v10: added appVolume.outputs.
     /// v11: removed spotifyAccountConnected; added spotifyKeychainCleanupPending.
     /// v12: added appVolume.bass.
-    static let currentSchemaVersion = 12
+    /// v13: added faceUnlockAutoLockInterval.
+    /// v14: added faceUnlockAtLockScreenEnabled and faceUnlockMatchThreshold.
+    /// v15: added faceUnlockLiveness.
+    static let currentSchemaVersion = 15
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -110,6 +113,29 @@ struct AppSettings: Codable, Equatable {
     /// on every install upgraded from v8.
     var appVolume = AppVolume()
 
+    /// How long an unused Face Unlock session stays unlocked before it locks
+    /// itself (`FaceSessionAutoLocker`). Stored as whole days, 0 for never.
+    /// **Defaults to 30 days**, as in Glance, where the feature comes from.
+    var faceUnlockAutoLockInterval: AutoLockInterval = .default
+
+    /// Whether Face Unlock scans for an enrolled face when the Mac wakes at
+    /// the lock screen and types the stored password on a match
+    /// (`FaceUnlockCoordinator`). **Off by default**: it types the user's
+    /// password and needs the camera and Accessibility, none of which a
+    /// user should be opted into.
+    var faceUnlockAtLockScreenEnabled: Bool = false
+
+    /// How close a face must be to an enrolled one to unlock. Stored by
+    /// preset name, not as a number, so the presets can be retuned without
+    /// a migration. **Defaults to balanced** (0.63).
+    var faceUnlockMatchThreshold: FaceMatchThreshold = .default
+
+    /// Liveness checking before a lock-screen match types the password.
+    /// Stored by name. **Defaults to light**, for upgraded installs too:
+    /// without it a photo on a phone can unlock the Mac, and light only
+    /// refuses frames that show glare or a device edge round the face.
+    var faceUnlockLiveness: FaceLivenessLevel = .default
+
     /// The tap engine's settings. Spotify's and Music's volumes are never
     /// here: they live in the apps themselves, set through AppleScript. Their
     /// output choice is, because AppleScript cannot route: a routed Spotify
@@ -161,7 +187,8 @@ struct AppSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, moduleEnablement, hoverEnterDelay, visualizerEnabled
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
-        case capybaraThemeEnabled, appVolume
+        case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
+        case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -225,6 +252,21 @@ struct AppSettings: Codable, Equatable {
         // also catches a value that is not an object at all.
         appVolume = (try? container.decode(AppVolume.self, forKey: .appVolume))
             ?? AppVolume()
+        // Absent in v12 and earlier; 30 days is the shipped default. A
+        // number that is not one of the choices falls back to it too.
+        faceUnlockAutoLockInterval = (try? container.decode(
+            AutoLockInterval.self, forKey: .faceUnlockAutoLockInterval)) ?? .default
+        // Absent in v13 and earlier; off is the shipped default.
+        faceUnlockAtLockScreenEnabled = (try? container.decode(
+            Bool.self, forKey: .faceUnlockAtLockScreenEnabled)) ?? false
+        // Absent in v13 and earlier; balanced is the shipped default. A
+        // preset name this build does not know falls back to it too.
+        faceUnlockMatchThreshold = (try? container.decode(
+            FaceMatchThreshold.self, forKey: .faceUnlockMatchThreshold)) ?? .default
+        // Absent in v14 and earlier; light is the shipped default. A level
+        // this build does not know falls back to it too.
+        faceUnlockLiveness = (try? container.decode(
+            FaceLivenessLevel.self, forKey: .faceUnlockLiveness)) ?? .default
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -314,6 +356,29 @@ struct AppSettings: Codable, Equatable {
             // v12 added appVolume.bass; the lenient decoder fills nil for
             // v11 JSON: no app boosted. Taps, saved volumes and outputs are
             // untouched. Nothing moves.
+            fallthrough
+        case 12:
+            // v13 added faceUnlockAutoLockInterval. No v12 payload can hold
+            // it, so it starts at the shipped default, 30 days. Set here
+            // explicitly rather than left to the decoder, so the upgrade's
+            // value is stated in one place.
+            result.faceUnlockAutoLockInterval = .default
+            fallthrough
+        case 13:
+            // v14 added faceUnlockAtLockScreenEnabled and
+            // faceUnlockMatchThreshold. No v13 payload can hold either, so
+            // they start at the shipped defaults: off, and balanced. Set here
+            // explicitly, as in case 12, so the upgrade's values are stated
+            // in one place.
+            result.faceUnlockAtLockScreenEnabled = false
+            result.faceUnlockMatchThreshold = .default
+            fallthrough
+        case 14:
+            // v15 added faceUnlockLiveness. No v14 payload can hold it, so it
+            // starts at the shipped default, light, for upgraded installs as
+            // for new ones: the match threshold and the lock-screen switch
+            // are untouched. Set here explicitly, as in case 12.
+            result.faceUnlockLiveness = .default
             fallthrough
         default:
             break

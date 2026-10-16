@@ -46,6 +46,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (v1 plan, decision 4). Its own serial queue holds every Core Audio
     /// call, so nothing here blocks on the capture permission prompt.
     private(set) lazy var tapEngine = TapEngine()
+    /// Face Unlock's session: the one in-memory key for the face data and
+    /// the stored password. It starts locked; when Face Unlock is set up,
+    /// the launch prompt restores it from the signed session record, or
+    /// asks once if there is none. Its auto-locker is created with it and
+    /// holds no timer while it is locked.
+    private(set) lazy var faceSession: FaceUnlockSession = {
+        let session = FaceUnlockSession()
+        faceAutoLocker = FaceSessionAutoLocker(session: session) { [settings] in
+            settings.settings.faceUnlockAutoLockInterval
+        }
+        return session
+    }()
+    private var faceAutoLocker: FaceSessionAutoLocker?
+    /// Enrolled faces for Face Unlock, encrypted with the session's key.
+    private(set) lazy var faceStore = FaceEnrollmentStore(session: faceSession)
+    /// The stored Mac password (phase 2), encrypted with the session's key.
+    private(set) lazy var facePasswordStore = FacePasswordStore(session: faceSession)
+    /// Face Unlock at the lock screen (phase 3). Created when the setting is
+    /// on at launch, when it is turned on, or when Settings opens (its page
+    /// shows the status). Creating it starts nothing: the lock monitor runs
+    /// only while the setting is on, and the camera, the face model and the
+    /// password are touched only by a scan at the lock screen.
+    private(set) lazy var faceUnlockCoordinator: FaceUnlockCoordinator = {
+        let coordinator = FaceUnlockCoordinator(
+            settings: settings, session: faceSession,
+            faceStore: faceStore, passwordStore: facePasswordStore)
+        lockScreenOverlay = LockScreenOverlayController(source: coordinator)
+        return coordinator
+    }()
+    /// Draws the coordinator's scan above the lock screen (phase 5). Lives
+    /// as long as the coordinator; creates a window only while a scan is
+    /// visible there.
+    private var lockScreenOverlay: LockScreenOverlayController?
 
     /// The system now-playing source, held only so the music-over-video
     /// preference can be applied live from Settings. MediaModule owns it as
@@ -139,6 +172,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settings: settings,
                 visualizer: audioViz,
                 appVolume: appVolume,
+                faceStore: faceStore,
+                facePasswordStore: facePasswordStore,
+                faceUnlockCoordinator: faceUnlockCoordinator,
                 updater: updaterController.updater,
                 onQuit: { NSApp.terminate(nil) },
                 onPreferMusicOverVideoChange: { [weak self] on in
@@ -304,6 +340,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The stored preference; off by default. Whether the spectrum is on
         // screen is MediaModule's to report, so no setSpectrumVisible here.
         audioViz.setEnabled(settings.settings.visualizerEnabled)
+
+        startFaceUnlockIfEnabled()
+    }
+
+    /// Lock-screen Face Unlock exists only once it is wanted: at launch if
+    /// the setting is on, otherwise as soon as it is turned on. Under XCTest
+    /// the host app must not prompt, so the ask-once-after-login prompt is
+    /// skipped there.
+    private func startFaceUnlockIfEnabled() {
+        if settings.settings.faceUnlockAtLockScreenEnabled {
+            let coordinator = faceUnlockCoordinator
+            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                coordinator.scheduleLoginPrompt()
+            }
+        } else {
+            observeFaceUnlockSetting()
+        }
+    }
+
+    /// Observation fires once per registration, so it re-registers until
+    /// the setting is first turned on; the coordinator then follows the
+    /// setting itself.
+    private func observeFaceUnlockSetting() {
+        withObservationTracking {
+            _ = settings.settings.faceUnlockAtLockScreenEnabled
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.settings.settings.faceUnlockAtLockScreenEnabled {
+                    _ = self.faceUnlockCoordinator
+                } else {
+                    self.observeFaceUnlockSetting()
+                }
+            }
+        }
     }
 
     /// Kept alive for the process lifetime; a released source stops firing.

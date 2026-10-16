@@ -79,11 +79,11 @@ final class SettingsWindowTests: XCTestCase {
         XCTAssertEqual(window?.contentMinSize.height ?? 0, 500, accuracy: 0.5)
     }
 
-    /// Order is the spec: General, Modules, Music, Permissions, About — and
-    /// Spotify is gone as a section of its own, folded into Music.
+    /// Order is the spec: General, Modules, Music, Face Unlock, Permissions,
+    /// About — and Spotify is gone as a section of its own, folded into Music.
     func testSidebarSectionsAreInOrder() {
         XCTAssertEqual(SettingsSection.allCases.map(\.title),
-                       ["General", "Modules", "Music", "Permissions", "About"])
+                       ["General", "Modules", "Music", "Face Unlock", "Permissions", "About"])
         XCTAssertFalse(SettingsSection.allCases.map(\.title).contains("Spotify"))
         for section in SettingsSection.allCases {
             XCTAssertFalse(section.symbol.isEmpty, "\(section.title) needs an SF Symbol")

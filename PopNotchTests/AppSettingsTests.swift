@@ -549,7 +549,7 @@ final class AppSettingsTests: XCTestCase {
         """)
         let settings = store().settings
 
-        XCTAssertEqual(settings.schemaVersion, 12)
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 12, "v11 lands at v12 or beyond")
         XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
         XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
         XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
@@ -572,7 +572,7 @@ final class AppSettingsTests: XCTestCase {
 
         let data = try XCTUnwrap(defaults.data(forKey: SettingsStore.storageKey))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(json["schemaVersion"] as? Int, 12)
+        XCTAssertEqual(json["schemaVersion"] as? Int, AppSettings.currentSchemaVersion)
         let appVolume = try XCTUnwrap(json["appVolume"] as? [String: Any])
         XCTAssertEqual(appVolume["bass"] as? [String: Int], saved, "stored as levels, not decibels")
     }
@@ -612,7 +612,8 @@ final class AppSettingsTests: XCTestCase {
     func testABoostedVolumeRoundTrips() {
         store().update { $0.appVolume.volumes = ["com.hnc.Discord": 170] }
         XCTAssertEqual(store().settings.appVolume.volumes, ["com.hnc.Discord": 170])
-        XCTAssertEqual(store().settings.schemaVersion, 12, "the range grew; the shape did not")
+        XCTAssertEqual(store().settings.schemaVersion, AppSettings.currentSchemaVersion,
+                       "the range grew; the shape did not")
     }
 
     func testBassThatIsNotAnObjectCostsOnlyItself() {
@@ -620,6 +621,218 @@ final class AppSettingsTests: XCTestCase {
         let appVolume = store().settings.appVolume
         XCTAssertNil(appVolume.bass)
         XCTAssertEqual(appVolume.tapsEnabled, true)
+    }
+
+    // MARK: - v13: Face Unlock auto-lock
+
+    /// CLAUDE.md's rule: real v12 JSON loads with nothing dropped. Every v12
+    /// field holds a non-default value, so one that silently fell back to
+    /// its default would fail here; the new field arrives at 30 days.
+    func testV12JSONMigratesToV13WithNothingDropped() {
+        write("""
+        {"schemaVersion": 12,
+         "moduleEnablement": {"media": true, "clipboard": false, "app-volume": true},
+         "hoverEnterDelay": 0.42,
+         "visualizerEnabled": true,
+         "showMenuBarIcon": false,
+         "preferMusicOverVideo": false,
+         "spotifyKeychainCleanupPending": true,
+         "capybaraThemeEnabled": true,
+         "appVolume": {"tapsEnabled": true,
+                       "volumes": {"com.hnc.Discord": 35, "webkit": 60},
+                       "outputs": {"com.hnc.Discord": "usb-uid"},
+                       "bass": {"com.hnc.Discord": 2}}}
+        """)
+        let settings = store().settings
+
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 13, "v12 lands at v13 or beyond")
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.visualizerEnabled)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.preferMusicOverVideo)
+        XCTAssertTrue(settings.spotifyKeychainCleanupPending)
+        XCTAssertTrue(settings.capybaraThemeEnabled)
+        XCTAssertEqual(settings.appVolume.tapsEnabled, true)
+        XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
+        XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
+        XCTAssertEqual(settings.appVolume.bass, ["com.hnc.Discord": 2])
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .thirtyDays, "the shipped default")
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+    }
+
+    func testAutoLockIntervalRoundTripsAsDays() throws {
+        XCTAssertEqual(AppSettings().faceUnlockAutoLockInterval, .thirtyDays)
+        store().update { $0.faceUnlockAutoLockInterval = .never }
+        XCTAssertEqual(store().settings.faceUnlockAutoLockInterval, .never, "must survive a reload")
+
+        let data = try XCTUnwrap(defaults.data(forKey: SettingsStore.storageKey))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["faceUnlockAutoLockInterval"] as? Int, 0, "never is stored as 0 days")
+    }
+
+    /// A number that is not one of the choices loses only itself.
+    func testUnknownAutoLockIntervalFallsBackToTheDefault() {
+        write(#"{"schemaVersion": 13, "faceUnlockAutoLockInterval": 3, "hoverEnterDelay": 0.5}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .thirtyDays)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+    }
+
+    // MARK: - v14: Face Unlock at the lock screen
+
+    /// CLAUDE.md's rule: real v13 JSON loads with nothing dropped. Every v13
+    /// field holds a non-default value, so one that silently fell back to
+    /// its default would fail here; the new fields arrive off and balanced.
+    func testV13JSONMigratesToV14WithNothingDropped() {
+        write("""
+        {"schemaVersion": 13,
+         "moduleEnablement": {"media": true, "clipboard": false, "app-volume": true},
+         "hoverEnterDelay": 0.42,
+         "visualizerEnabled": true,
+         "showMenuBarIcon": false,
+         "preferMusicOverVideo": false,
+         "spotifyKeychainCleanupPending": true,
+         "capybaraThemeEnabled": true,
+         "appVolume": {"tapsEnabled": true,
+                       "volumes": {"com.hnc.Discord": 35, "webkit": 60},
+                       "outputs": {"com.hnc.Discord": "usb-uid"},
+                       "bass": {"com.hnc.Discord": 2}},
+         "faceUnlockAutoLockInterval": 7}
+        """)
+        let settings = store().settings
+
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 14, "v13 lands at v14 or beyond")
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.visualizerEnabled)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.preferMusicOverVideo)
+        XCTAssertTrue(settings.spotifyKeychainCleanupPending)
+        XCTAssertTrue(settings.capybaraThemeEnabled)
+        XCTAssertEqual(settings.appVolume.tapsEnabled, true)
+        XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
+        XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
+        XCTAssertEqual(settings.appVolume.bass, ["com.hnc.Discord": 2])
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .sevenDays)
+        XCTAssertFalse(settings.faceUnlockAtLockScreenEnabled, "off is the shipped default")
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .balanced, "the shipped default")
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+    }
+
+    func testLockScreenFaceUnlockSettingsRoundTrip() throws {
+        XCTAssertFalse(AppSettings().faceUnlockAtLockScreenEnabled)
+        XCTAssertEqual(AppSettings().faceUnlockMatchThreshold, .balanced)
+        store().update {
+            $0.faceUnlockAtLockScreenEnabled = true
+            $0.faceUnlockMatchThreshold = .strict
+        }
+        let reloaded = store().settings
+        XCTAssertTrue(reloaded.faceUnlockAtLockScreenEnabled, "must survive a reload")
+        XCTAssertEqual(reloaded.faceUnlockMatchThreshold, .strict, "must survive a reload")
+
+        let data = try XCTUnwrap(defaults.data(forKey: SettingsStore.storageKey))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["faceUnlockMatchThreshold"] as? String, "strict", "stored by preset name")
+        XCTAssertEqual(json["faceUnlockAtLockScreenEnabled"] as? Bool, true)
+    }
+
+    /// A preset name or flag this build does not understand loses only itself.
+    func testMalformedLockScreenFaceUnlockSettingsFallBackToDefaults() {
+        write(#"{"schemaVersion": 14, "faceUnlockMatchThreshold": "paranoid", "faceUnlockAtLockScreenEnabled": "yes", "hoverEnterDelay": 0.5}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .balanced)
+        XCTAssertFalse(settings.faceUnlockAtLockScreenEnabled)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+    }
+
+    /// face-reidentification-retail-0095's scale (ArcFace's was 0.58/0.63/0.68).
+    func testMatchThresholdPresets() {
+        XCTAssertEqual(FaceMatchThreshold.lenient.value, 0.68)
+        XCTAssertEqual(FaceMatchThreshold.balanced.value, 0.72)
+        XCTAssertEqual(FaceMatchThreshold.strict.value, 0.76)
+        XCTAssertEqual(FaceMatchThreshold.default, .balanced)
+    }
+
+    /// The model swap retuned the numbers, not the stored names: settings
+    /// saved before it still decode to the same preset, so no migration.
+    func testMatchThresholdPresetNamesSurviveTheModelSwap() {
+        XCTAssertEqual(FaceMatchThreshold.allCases.map(\.rawValue), ["lenient", "balanced", "strict"])
+        XCTAssertLessThan(FaceMatchThreshold.lenient.value, FaceMatchThreshold.balanced.value)
+        XCTAssertLessThan(FaceMatchThreshold.balanced.value, FaceMatchThreshold.strict.value)
+        write(#"{"schemaVersion": 15, "faceUnlockMatchThreshold": "lenient", "hoverEnterDelay": 0.5}"#)
+        XCTAssertEqual(store().settings.faceUnlockMatchThreshold, .lenient)
+    }
+
+    // MARK: - v15: Face Unlock liveness
+
+    /// CLAUDE.md's rule: real v14 JSON loads with nothing dropped. Every v14
+    /// field holds a non-default value; liveness arrives at light, for an
+    /// upgraded install as for a new one.
+    func testV14JSONMigratesToV15WithNothingDropped() {
+        write("""
+        {"schemaVersion": 14,
+         "moduleEnablement": {"media": true, "clipboard": false, "app-volume": true},
+         "hoverEnterDelay": 0.42,
+         "visualizerEnabled": true,
+         "showMenuBarIcon": false,
+         "preferMusicOverVideo": false,
+         "spotifyKeychainCleanupPending": true,
+         "capybaraThemeEnabled": true,
+         "appVolume": {"tapsEnabled": true,
+                       "volumes": {"com.hnc.Discord": 35, "webkit": 60},
+                       "outputs": {"com.hnc.Discord": "usb-uid"},
+                       "bass": {"com.hnc.Discord": 2}},
+         "faceUnlockAutoLockInterval": 7,
+         "faceUnlockAtLockScreenEnabled": true,
+         "faceUnlockMatchThreshold": "strict"}
+        """)
+        let settings = store().settings
+
+        XCTAssertEqual(settings.schemaVersion, 15)
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.visualizerEnabled)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.preferMusicOverVideo)
+        XCTAssertTrue(settings.spotifyKeychainCleanupPending)
+        XCTAssertTrue(settings.capybaraThemeEnabled)
+        XCTAssertEqual(settings.appVolume.tapsEnabled, true)
+        XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
+        XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
+        XCTAssertEqual(settings.appVolume.bass, ["com.hnc.Discord": 2])
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .sevenDays)
+        XCTAssertTrue(settings.faceUnlockAtLockScreenEnabled)
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .strict)
+        XCTAssertEqual(settings.faceUnlockLiveness, .light, "the shipped default, for upgraded installs too")
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+    }
+
+    func testLivenessLevelRoundTripsByName() throws {
+        XCTAssertEqual(AppSettings().faceUnlockLiveness, .light)
+        store().update { $0.faceUnlockLiveness = .off }
+        XCTAssertEqual(store().settings.faceUnlockLiveness, .off, "must survive a reload")
+
+        let data = try XCTUnwrap(defaults.data(forKey: SettingsStore.storageKey))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["faceUnlockLiveness"] as? String, "off", "stored by name")
+    }
+
+    /// A level from a later build ("heavy") or a wrong type loses only itself.
+    func testUnknownLivenessLevelFallsBackToLight() {
+        write(#"{"schemaVersion": 15, "faceUnlockLiveness": "heavy", "faceUnlockMatchThreshold": "strict", "hoverEnterDelay": 0.5}"#)
+        var settings = store().settings
+        XCTAssertEqual(settings.faceUnlockLiveness, .light)
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .strict)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+
+        write(#"{"schemaVersion": 15, "faceUnlockLiveness": 1, "hoverEnterDelay": 0.5}"#)
+        settings = store().settings
+        XCTAssertEqual(settings.faceUnlockLiveness, .light)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
     }
 
     // MARK: - Module toggles decode per entry

@@ -7,7 +7,7 @@ import os
 /// One sidebar row. An enum rather than free-floating views so the order,
 /// the labels and the detail switch cannot drift apart.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, modules, music, permissions, about
+    case general, modules, music, faceUnlock, permissions, about
 
     var id: String { rawValue }
 
@@ -16,6 +16,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .modules: "Modules"
         case .music: "Music"
+        case .faceUnlock: "Face Unlock"
         case .permissions: "Permissions"
         case .about: "About"
         }
@@ -26,6 +27,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .modules: "square.stack"
         case .music: "music.note"
+        case .faceUnlock: "faceid"
         case .permissions: "lock.shield"
         case .about: "info.circle"
         }
@@ -47,6 +49,15 @@ struct SettingsView: View {
     /// The mixer service, for the taps toggle (Phase 5). Optional so tests
     /// build the view without one; the toggle then does not render.
     var appVolume: AppVolumeService?
+    /// Enrolled faces. Optional so tests build the view without one; the
+    /// Face Unlock page then shows nothing.
+    var faceStore: FaceEnrollmentStore?
+    /// The stored Mac password for Face Unlock. Optional for the same
+    /// reason; the page needs both.
+    var facePasswordStore: FacePasswordStore?
+    /// Lock-screen Face Unlock's status and permissions. Optional for the
+    /// same reason.
+    var faceUnlockCoordinator: FaceUnlockCoordinator?
     /// Optional so the tab stays constructible without a live Sparkle
     /// updater — tests build it with nil, and the Check for Updates row
     /// simply does not render.
@@ -97,6 +108,11 @@ struct SettingsView: View {
             MusicSettingsTab(settings: settings, visualizer: visualizer,
                              appVolume: appVolume,
                              onPreferMusicOverVideoChange: onPreferMusicOverVideoChange)
+        case .faceUnlock:
+            if let faceStore, let facePasswordStore {
+                FaceUnlockSettingsTab(store: faceStore, passwordStore: facePasswordStore,
+                                      settings: settings, coordinator: faceUnlockCoordinator)
+            }
         case .permissions:
             PermissionsSettingsTab()
         case .about:

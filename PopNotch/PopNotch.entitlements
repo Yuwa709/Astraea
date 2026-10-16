@@ -5,9 +5,14 @@
 	<!-- Hardened Runtime forbids sending Apple Events without this
 	     declaration: no prompt, no Automation pane entry, a silent -1743.
 	     Required by the media feature to read artwork from and control
-	     Spotify and Apple Music. The only entitlement this app holds;
-	     each one is a notarization risk (CLAUDE.md, distribution). -->
+	     Spotify and Apple Music. Each entitlement is a notarization
+	     risk (CLAUDE.md, distribution); this file holds only these two. -->
 	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<!-- Hardened Runtime blocks camera capture without this, even with
+	     NSCameraUsageDescription present. Required by Face Unlock
+	     enrolment (2026-10-14). -->
+	<key>com.apple.security.device.camera</key>
 	<true/>
 </dict>
 </plist>
