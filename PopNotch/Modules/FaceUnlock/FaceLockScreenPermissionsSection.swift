@@ -9,7 +9,7 @@ struct FaceLockScreenPermissionsSection: View {
     var body: some View {
         Section {
             FacePermissionRow(title: "Accessibility", isGranted: coordinator.isAccessibilityTrusted,
-                              note: "Needed to type your password at the lock screen. After PopNotch updates, macOS may need it granted again, because each build is signed differently. If PopNotch is already listed and switched on, remove it and add it again.") {
+                              note: "Needed to type your password at the lock screen. If PopNotch is already listed and switched on, remove it and add it again.") {
                 Button("Grant Access…") { coordinator.requestAccessibility() }
             }
             FacePermissionRow(title: "Camera", isGranted: coordinator.cameraPermission == .granted,
