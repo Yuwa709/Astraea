@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Lock Screen → Permissions: what typing the password needs. Only the Grant
-/// button prompts; the other opens System Settings.
+/// Lock Screen → Permissions: what typing the password needs. Only a Grant
+/// button prompts; Open System Settings… only opens System Settings.
 struct FaceLockScreenPermissionsSection: View {
     let coordinator: FaceUnlockCoordinator
 
@@ -14,8 +14,18 @@ struct FaceLockScreenPermissionsSection: View {
             }
             FacePermissionRow(title: "Camera", isGranted: coordinator.cameraPermission == .granted,
                               note: cameraNote) {
-                if coordinator.cameraPermission == .denied {
-                    Button("Open System Settings…") { CameraPermission.openSystemSettings() }
+                switch coordinator.cameraPermission.grantAction {
+                case .request:
+                    Button("Grant Access…") {
+                        Task {
+                            await coordinator.requestCameraAccess()
+                            CameraPermission.reopenSettingsAfterPrompt(from: "Grant Access")
+                        }
+                    }
+                case .openSystemSettings:
+                    Button("Open System Settings…") { Task { await coordinator.requestCameraAccess() } }
+                case nil:
+                    EmptyView()
                 }
             }
         } header: {
@@ -26,7 +36,7 @@ struct FaceLockScreenPermissionsSection: View {
     private var cameraNote: String {
         switch coordinator.cameraPermission {
         case .granted: ""
-        case .notDetermined: "PopNotch asks for the camera the first time you add a face."
+        case .notDetermined: "Needed to see your face at the lock screen. PopNotch also asks the first time you add a face."
         case .denied: "Needed to see your face at the lock screen."
         case .restricted: "Camera access is restricted on this Mac."
         }

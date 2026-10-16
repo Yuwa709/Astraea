@@ -85,6 +85,10 @@ struct FaceUnlockEnvironment {
     var accessibility: any AccessibilityAuthorizing
     /// Read only, never requested here.
     var cameraPermission: () -> CameraPermission
+    /// The camera prompt, and Privacy & Security → Camera. Only ever from
+    /// the Settings Camera row's button.
+    var requestCameraAccess: @MainActor () async -> Void
+    var openCameraSettings: @MainActor () -> Void
     var makeFrameSource: () -> any FaceFrameSource
     /// Loads the model. Called off the main actor, on a lock session's first
     /// scan.
@@ -109,6 +113,8 @@ struct FaceUnlockEnvironment {
             lockEvents: LockMonitor(),
             accessibility: accessibility,
             cameraPermission: { CameraPermission.current },
+            requestCameraAccess: { await CameraPermission.request() },
+            openCameraSettings: { CameraPermission.openSystemSettings() },
             makeFrameSource: { makeLockScreenFrameSource() },
             makeRecognizer: { try PipelineFaceScanRecognizer() },
             livenessSampler: VisionLivenessSampler(),

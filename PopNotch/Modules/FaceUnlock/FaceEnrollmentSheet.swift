@@ -17,7 +17,13 @@ struct FaceEnrollmentSheet: View {
         }
         .padding(24)
         .frame(width: 420, height: 470)
-        .task { await session.start() }
+        .task {
+            // The first Add a Face shows the camera prompt, which buries
+            // Settings and this sheet; bring them back once start() is past it.
+            let prompts = CameraPermission.current == .notDetermined
+            await session.start()
+            if prompts { CameraPermission.reopenSettingsAfterPrompt(from: "Add a Face") }
+        }
         // Covers every exit: Cancel, Done, Escape, the window closing. The
         // session stays cancelled, so a start() still loading the model or
         // starting the camera stops instead of running on.

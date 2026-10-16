@@ -88,6 +88,18 @@ nonisolated final class FakeAccessibility: AccessibilityAuthorizing, @unchecked 
 @MainActor
 final class FakePermissions {
     var camera: CameraPermission = .granted
+    /// What the camera prompt answers.
+    var cameraAnswer: CameraPermission = .granted
+    private(set) var cameraRequests = 0
+    private(set) var cameraSettingsOpens = 0
+
+    /// Like the system prompt: answers only while not yet asked.
+    func requestCamera() async {
+        cameraRequests += 1
+        if camera == .notDetermined { camera = cameraAnswer }
+    }
+
+    func openCameraSettings() { cameraSettingsOpens += 1 }
 }
 
 /// While running, a new frame on every read when converting every frame;

@@ -5,7 +5,8 @@ import SwiftUI
 /// where it stands.
 ///
 /// Opening it never prompts. The status and permission rows read cached
-/// state only; Accessibility is asked for only from its Grant button.
+/// state only; Accessibility and the camera are asked for only from their
+/// Grant buttons.
 /// Without a coordinator (tests) only the switch and the threshold show.
 struct FaceLockScreenSection: View {
     @Bindable var settings: SettingsStore

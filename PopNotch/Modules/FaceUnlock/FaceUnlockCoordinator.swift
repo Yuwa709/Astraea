@@ -114,7 +114,12 @@ final class FaceUnlockCoordinator {
     /// In memory only: a relaunch starts from zero.
     private(set) var consecutiveRejections = 0
     private(set) var isAccessibilityTrusted: Bool
-    private(set) var cameraPermission: CameraPermission
+    private(set) var cameraPermission: CameraPermission {
+        didSet {
+            guard cameraPermission != oldValue else { return }
+            Self.logger.notice("Camera permission: \(String(describing: oldValue), privacy: .public) -> \(String(describing: self.cameraPermission), privacy: .public)")
+        }
+    }
 
     var isEnabled: Bool { settings.settings.faceUnlockAtLockScreenEnabled }
 
@@ -204,6 +209,23 @@ final class FaceUnlockCoordinator {
     func requestAccessibility() {
         environment.accessibility.requestTrust()
         refreshPermissions()
+    }
+
+    /// The Settings Camera row's button: the system prompt if the camera was
+    /// never asked for, else System Settings, whose answer the row reads
+    /// when the user comes back to PopNotch. Only from that button.
+    func requestCameraAccess() async {
+        let before = environment.cameraPermission()
+        guard let action = before.grantAction else { return }
+        Self.logger.notice("Camera Grant Access tapped (\(String(describing: before), privacy: .public)): \(String(describing: action), privacy: .public)")
+        switch action {
+        case .request:
+            await environment.requestCameraAccess()
+            refreshPermissions()
+            Self.logger.notice("Camera permission after the prompt: \(String(describing: self.cameraPermission), privacy: .public)")
+        case .openSystemSettings:
+            environment.openCameraSettings()
+        }
     }
 
     /// Re-reads Accessibility and the camera, neither of which notifies on

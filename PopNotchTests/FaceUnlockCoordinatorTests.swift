@@ -99,6 +99,8 @@ final class FaceUnlockCoordinatorTests: XCTestCase {
             lockGuard: lockGuard, lockEvents: events,
             accessibility: accessibility,
             cameraPermission: { permissions.camera },
+            requestCameraAccess: { await permissions.requestCamera() },
+            openCameraSettings: { permissions.openCameraSettings() },
             makeFrameSource: { camera },
             makeRecognizer: makeRecognizer ?? { recognizer.noteCreated(); return recognizer },
             livenessSampler: livenessSampler,
@@ -175,6 +177,8 @@ final class FaceUnlockCoordinatorTests: XCTestCase {
         XCTAssertEqual(authenticator.calls, authCallsAfterSetup, "no owner check at the lock screen", file: file, line: line)
         XCTAssertEqual(vault.reads, vaultReadsAfterSetup, "no keychain read at the lock screen", file: file, line: line)
         XCTAssertEqual(accessibility.requests, 0, "no Accessibility prompt", file: file, line: line)
+        XCTAssertEqual(permissions.cameraRequests, 0, "no camera prompt", file: file, line: line)
+        XCTAssertEqual(permissions.cameraSettingsOpens, 0, "System Settings not opened", file: file, line: line)
     }
 
     // MARK: - The happy path
@@ -369,6 +373,50 @@ final class FaceUnlockCoordinatorTests: XCTestCase {
         let coordinator = await makeCoordinator()
         coordinator.requestAccessibility()
         XCTAssertEqual(accessibility.requests, 1)
+    }
+
+    func testCameraGrantActionPerPermission() {
+        XCTAssertEqual(CameraPermission.notDetermined.grantAction, .request)
+        XCTAssertEqual(CameraPermission.denied.grantAction, .openSystemSettings)
+        XCTAssertEqual(CameraPermission.restricted.grantAction, .openSystemSettings)
+        XCTAssertNil(CameraPermission.granted.grantAction)
+    }
+
+    func testRequestCameraAccessPromptsWhenNotYetAskedAndRefreshes() async {
+        permissions.camera = .notDetermined
+        let coordinator = await makeCoordinator()
+        XCTAssertEqual(coordinator.status, .cameraNotYetRequested)
+        await coordinator.requestCameraAccess()
+        XCTAssertEqual(permissions.cameraRequests, 1)
+        XCTAssertEqual(permissions.cameraSettingsOpens, 0)
+        XCTAssertEqual(coordinator.cameraPermission, .granted)
+        XCTAssertEqual(coordinator.status, .ready)
+    }
+
+    func testRequestCameraAccessRefusedShowsDenied() async {
+        permissions.camera = .notDetermined
+        permissions.cameraAnswer = .denied
+        let coordinator = await makeCoordinator()
+        await coordinator.requestCameraAccess()
+        XCTAssertEqual(coordinator.cameraPermission, .denied)
+        XCTAssertEqual(coordinator.status, .cameraNotAuthorized)
+    }
+
+    func testRequestCameraAccessAfterRefusalOpensSystemSettingsOnly() async {
+        for permission in [CameraPermission.denied, .restricted] {
+            permissions.camera = permission
+            let coordinator = await makeCoordinator()
+            await coordinator.requestCameraAccess()
+            XCTAssertEqual(coordinator.cameraPermission, permission)
+        }
+        XCTAssertEqual(permissions.cameraRequests, 0, "a refusal is never asked again")
+        XCTAssertEqual(permissions.cameraSettingsOpens, 2)
+    }
+
+    func testRequestCameraAccessWhenGrantedDoesNothing() async {
+        let coordinator = await makeCoordinator()
+        await coordinator.requestCameraAccess()
+        assertNothingPrompted()
     }
 
     func testCameraNotAuthorizedRefusesAndNeverRequests() async {

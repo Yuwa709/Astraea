@@ -18,11 +18,43 @@ enum CameraPermission: Equatable {
         }
     }
 
+    /// What the Settings Camera row's button does in this state; nil once
+    /// granted. Pure, for tests.
+    enum GrantAction: Equatable { case request, openSystemSettings }
+
+    var grantAction: GrantAction? {
+        switch self {
+        case .granted: nil
+        case .notDetermined: .request
+        case .denied, .restricted: .openSystemSettings
+        }
+    }
+
+    /// Shows the system camera prompt. macOS shows it only while the status
+    /// is `.notDetermined`; after that this returns at once.
+    static func request() async {
+        _ = await AVCaptureDevice.requestAccess(for: .video)
+    }
+
     /// Opens Privacy & Security → Camera.
     static func openSystemSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") else { return }
         NSWorkspace.shared.open(url)
     }
+
+    /// The camera prompt deactivates PopNotch, and when it is dismissed macOS
+    /// hands focus back to the previously active app, burying the Settings
+    /// window behind it. Reopen it through the gear's path: the same hard
+    /// rule 4 carve-out, since the prompt directly follows the user's click
+    /// (Grant Access, or Add a Face). Never call this from the lock screen.
+    @MainActor
+    static func reopenSettingsAfterPrompt(from source: String) {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
+        logger.notice("Camera prompt dismissed (\(source, privacy: .public)); PopNotch active: \(NSApp.isActive, privacy: .public), frontmost: \(front, privacy: .public); reopening Settings")
+        NotificationCenter.default.post(name: .popNotchOpenSettings, object: nil)
+    }
+
+    private static let logger = Logger(subsystem: "com.techie.PopNotch", category: "FaceUnlock")
 }
 
 /// Owns the capture session for an enrolment or a lock-screen scan, and
