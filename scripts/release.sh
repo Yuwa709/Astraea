@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build, ad-hoc sign, package, and sign an appcast for one PopNotch release.
+# Build, sign with PopNotch's self-signed identity, package, and sign an
+# appcast for one PopNotch release.
 #
 # Produces three artifacts in dist/ and uploads NOTHING:
 #
@@ -20,12 +21,32 @@
 # which is where SUFeedURL points.
 #
 # Usage: scripts/release.sh 1.1
+#        scripts/release.sh 1.1 --sign-only
+#
+# --sign-only stops after build, sign, verify and the launch smoke test. It
+# writes nothing to dist/, never touches the EdDSA key or appcast.xml, and does
+# not need generate_appcast. Use it to check a signing change without cutting a
+# release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-}"
+VERSION=""
+SIGN_ONLY=0
+for ARG in "$@"; do
+    case "$ARG" in
+        --sign-only) SIGN_ONLY=1 ;;
+        -*) echo "!! Unknown option: $ARG" >&2; exit 1 ;;
+        *)
+            if [[ -n "$VERSION" ]]; then
+                echo "!! More than one version given: '$VERSION' and '$ARG'" >&2
+                exit 1
+            fi
+            VERSION="$ARG"
+            ;;
+    esac
+done
 if [[ -z "$VERSION" ]]; then
-    echo "!! Usage: scripts/release.sh <version>   (e.g. 1.1)" >&2
+    echo "!! Usage: scripts/release.sh <version> [--sign-only]   (e.g. 1.1)" >&2
     exit 1
 fi
 if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
@@ -42,9 +63,69 @@ DMG="$DIST/PopNotch-$VERSION.dmg"
 STAGING="$DIST/staging"
 ENTITLEMENTS="PopNotch/PopNotch.entitlements"
 
+# --- signing identity --------------------------------------------------------
+# Releases are signed with a self-signed certificate, "PopNotch Self-Signed
+# (Techie)", kept in the login keychain (decided 2026-10-15, PROJECT-CONTEXT.md,
+# Distribution). Up to 1.3.1 they were ad-hoc, and an ad-hoc designated
+# requirement is a bare cdhash: every build looked like a different app, so the
+# Accessibility grant and the Face Unlock keychain item's ACL reset on every
+# update. A certificate gives the stable requirement
+#     identifier "com.techie.PopNotch" and certificate leaf = H"<sha1>"
+# which every build signed with this one cert satisfies.
+#
+# Selected by SHA-1, looked up by exact Common Name. NO -v on find-identity:
+# the cert is deliberately untrusted (codesign signs with it without any trust
+# settings), and -v hides untrusted identities.
+#
+# There is NO fallback. Never ad-hoc, which is the identity churn this replaces.
+# Never the Apple Development certificate, a personal credential that must not
+# sign a shipped build.
+#
+# EXPECTED_SIGN_SHA1 pins the cert. A different hash under the same name means
+# the cert was regenerated, and shipping that changes the designated
+# requirement for every installed copy, which costs every user their grants
+# again. If the cert really was lost and replaced, update the constant on
+# purpose and record it in PROJECT-CONTEXT.md.
+SIGN_NAME="PopNotch Self-Signed (Techie)"
+EXPECTED_SIGN_SHA1="DD0484A62A4558E96D7D80B89941A24B31F13C65"
+echo "==> Locating signing identity"
+SIGN_SHA1S=$(security find-identity -p codesigning 2>/dev/null \
+    | awk -v want="\"$SIGN_NAME\"" \
+        'index($0, want) && length($2) == 40 && $2 ~ /^[0-9A-F]+$/ { print $2 }' \
+    | sort -u)
+SIGN_COUNT=$(grep -c . <<<"$SIGN_SHA1S" || true)
+if [[ "$SIGN_COUNT" -eq 0 ]]; then
+    cat >&2 <<MSG
+!! No code-signing identity named "$SIGN_NAME" in the keychain.
+
+   Releases must be signed with it, and this script will not fall back to
+   ad-hoc or to any other certificate. Restore it by importing the backup
+   .p12 exported from Keychain Access (double-click it, login keychain), then
+   re-run. Check with:  security find-identity -p codesigning
+MSG
+    exit 1
+fi
+if [[ "$SIGN_COUNT" -ne 1 ]]; then
+    echo "!! More than one identity named \"$SIGN_NAME\":" >&2
+    sed 's/^/   /' <<<"$SIGN_SHA1S" >&2
+    echo "   Delete the stray one in Keychain Access; the cert must be unambiguous." >&2
+    exit 1
+fi
+SIGN_SHA1="$SIGN_SHA1S"
+if [[ "$SIGN_SHA1" != "$EXPECTED_SIGN_SHA1" ]]; then
+    echo "!! \"$SIGN_NAME\" is $SIGN_SHA1, expected $EXPECTED_SIGN_SHA1." >&2
+    echo "   This is a different certificate. Shipping it would change PopNotch's" >&2
+    echo "   designated requirement and reset every user's grants. See the" >&2
+    echo "   EXPECTED_SIGN_SHA1 comment in this script." >&2
+    exit 1
+fi
+echo "    $SIGN_NAME ($SIGN_SHA1)"
+
 # --- generate_appcast, located dynamically -----------------------------------
 # It ships inside the resolved SPM artifact, whose path contains a DerivedData
 # hash that changes and which a clean build deletes. Never hardcode it.
+# --sign-only never reaches the appcast step, so it does not need the tool.
+if [[ "$SIGN_ONLY" -eq 0 ]]; then
 echo "==> Locating Sparkle tools"
 GENERATE_APPCAST=$(find "$HOME/Library/Developer/Xcode/DerivedData" \
     -path "*/artifacts/sparkle/Sparkle/bin/generate_appcast" -type f 2>/dev/null | head -1)
@@ -60,6 +141,7 @@ MSG
     exit 1
 fi
 echo "    $GENERATE_APPCAST"
+fi
 
 # --- launch smoke test ---------------------------------------------------
 # The check that would have caught 1.0.0. A signature can be individually valid
@@ -97,8 +179,9 @@ smoke_launch() {
 #
 # CODE_SIGN_IDENTITY="-" makes the build itself ad-hoc. Without it, Automatic
 # signing picks the Apple Development certificate, which is a personal
-# credential that must never ship. The explicit re-sign below is belt to this
-# braces: it guarantees the identity regardless of project settings.
+# credential that must never ship. The ad-hoc build is only an intermediate:
+# the explicit re-sign below replaces every signature in the bundle with the
+# release identity, and the checks after it prove nothing ad-hoc survived.
 #
 # CLANG_COVERAGE_MAPPING=NO keeps coverage instrumentation out of the release.
 # No scheme is committed, so xcodebuild generates one, and that scheme injects
@@ -130,7 +213,7 @@ if [[ ! -d "$APP" ]]; then
 fi
 echo "    $APP"
 
-# --- ad-hoc sign, inside out -------------------------------------------------
+# --- sign with the release identity, inside out ------------------------------
 # Order matters: nested code must be signed before its container, or sealing
 # the container captures a hash that the later nested signature invalidates.
 #
@@ -147,11 +230,14 @@ FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 #
 # WHY IT IS REQUIRED: Hardened Runtime turns on Library Validation, which
 # demands that every loaded library share the main executable's Team ID.
-# Ad-hoc signatures have NO Team ID, so an ad-hoc app cannot load its own
-# ad-hoc framework and dyld refuses with "mapping process and mapped file
-# (non-platform) have different Team IDs" — the 1.0.0 launch failure. Signing
-# inside-out with one identity does not fix it, because the problem is the
-# absence of a team, not a mismatch between two.
+# Only Apple-issued certificates carry a Team ID. Ad-hoc signatures have none,
+# and neither does the self-signed release certificate (TeamIdentifier=not
+# set), so the app cannot load its own Sparkle.framework and dyld refuses with
+# "mapping process and mapped file (non-platform) have different Team IDs" —
+# the 1.0.0 launch failure. Signing inside-out with one identity does not fix
+# it, because the problem is the absence of a team, not a mismatch between two.
+# Re-tested with the self-signed cert on 2026-10-15: without this entitlement
+# the app aborts at launch with exactly that dyld error.
 #
 # Disabling library validation is the narrow fix: it drops that one check and
 # keeps the rest of Hardened Runtime (DYLD injection blocking, unsigned
@@ -159,15 +245,18 @@ FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 # but forfeits all of those.
 #
 # REMOVE THIS when a Developer ID exists: signing app and framework with the
-# same real identity gives them a matching Team ID, library validation passes
-# on its own, and this entitlement becomes an unnecessary weakening.
+# same Apple-issued identity gives them a matching Team ID, library validation
+# passes on its own, and this entitlement becomes an unnecessary weakening.
 RELEASE_ENTITLEMENTS=$(mktemp -t popnotch-release-entitlements)
 cp "$ENTITLEMENTS" "$RELEASE_ENTITLEMENTS"
 /usr/libexec/PlistBuddy -c \
     "Add :com.apple.security.cs.disable-library-validation bool true" \
     "$RELEASE_ENTITLEMENTS" >/dev/null
 
-echo "==> Ad-hoc signing"
+# --timestamp=none: Apple's timestamp server only stamps signatures made with
+# Apple-issued certificates. Without a secure timestamp, the signature is
+# valid for as long as the certificate is, which for this one is until 2046.
+echo "==> Signing with $SIGN_NAME"
 for COMPONENT in \
     "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
     "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc" \
@@ -175,11 +264,11 @@ for COMPONENT in \
     "$FRAMEWORK/Versions/B/Autoupdate"
 do
     [[ -e "$COMPONENT" ]] || { echo "!! Missing $COMPONENT" >&2; exit 1; }
-    codesign -f -s - -o runtime --timestamp=none \
+    codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none \
         --preserve-metadata=entitlements "$COMPONENT"
     echo "    signed $(basename "$COMPONENT")"
 done
-codesign -f -s - -o runtime --timestamp=none "$FRAMEWORK"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$FRAMEWORK"
 echo "    signed Sparkle.framework"
 
 # --- vendored mediaremote-adapter --------------------------------------------
@@ -231,12 +320,12 @@ then
 fi
 echo "    rewrote MediaRemoteAdapter install name"
 
-codesign -f -s - -o runtime --timestamp=none "$ADAPTER_FRAMEWORK"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$ADAPTER_FRAMEWORK"
 echo "    signed MediaRemoteAdapter.framework"
-codesign -f -s - -o runtime --timestamp=none "$ADAPTER_TEST_CLIENT"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$ADAPTER_TEST_CLIENT"
 echo "    signed MediaRemoteAdapterTestClient"
 
-codesign -f -s - -o runtime --timestamp=none \
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none \
     --entitlements "$RELEASE_ENTITLEMENTS" "$APP"
 rm -f "$RELEASE_ENTITLEMENTS"
 echo "    signed PopNotch.app"
@@ -276,6 +365,40 @@ if ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "apple-events"; t
     exit 1
 fi
 echo "    apple-events entitlement present"
+
+# The point of the release identity: a designated requirement pinned to the
+# certificate, not to this build's cdhash. A cdhash here means the bundle is
+# ad-hoc again, and every user would lose their grants on this update.
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
+SIGN_SHA1_LOWER=$(tr '[:upper:]' '[:lower:]' <<<"$SIGN_SHA1")
+EXPECTED_DR="identifier \"$BUNDLE_ID\" and certificate leaf = H\"$SIGN_SHA1_LOWER\""
+ACTUAL_DR=$(codesign -d -r- "$APP" 2>/dev/null | sed -n 's/^designated => //p')
+if [[ "$ACTUAL_DR" != "$EXPECTED_DR" ]]; then
+    echo "!! Unexpected designated requirement." >&2
+    echo "   got:      ${ACTUAL_DR:-<none>}" >&2
+    echo "   expected: $EXPECTED_DR" >&2
+    echo "   Refusing to package." >&2
+    exit 1
+fi
+echo "    designated => $ACTUAL_DR"
+
+# Every Mach-O in the bundle must carry the release identity. The signing
+# above walks a fixed list; code embedded later and missed there would ship
+# with Xcode's ad-hoc signature, which --verify --deep accepts silently.
+UNSIGNED=0
+while IFS= read -r -d '' FILE; do
+    file -b "$FILE" | grep -q '^Mach-O' || continue
+    AUTHORITY=$(codesign -dvv "$FILE" 2>&1 | sed -n 's/^Authority=//p')
+    if [[ "$AUTHORITY" != "$SIGN_NAME" ]]; then
+        echo "!! ${FILE#"$APP"/} is not signed by $SIGN_NAME (Authority: ${AUTHORITY:-none, so ad-hoc or unsigned})" >&2
+        UNSIGNED=1
+    fi
+done < <(find "$APP" -type f -print0)
+if [[ "$UNSIGNED" -ne 0 ]]; then
+    echo "   Add it to the inside-out signing above. Refusing to package." >&2
+    exit 1
+fi
+echo "    every Mach-O in the bundle signed by $SIGN_NAME"
 
 # Coverage instrumentation must not ship. CLANG_COVERAGE_MAPPING=NO on the
 # build line is the fix; this is the proof, read from the binary rather than
@@ -322,6 +445,13 @@ echo "    SUPublicEDKey present"
 echo "==> Launch smoke test (signed bundle)"
 smoke_launch "$APP" "build products"
 
+if [[ "$SIGN_ONLY" -eq 1 ]]; then
+    echo
+    echo "--sign-only: built, signed and verified $APP"
+    echo "Nothing packaged; dist/ and appcast.xml untouched."
+    exit 0
+fi
+
 # --- package -----------------------------------------------------------------
 # ditto, not zip: a plain zip does not preserve the extended attributes and
 # symlink structure a signed bundle depends on, and breaks the signature.
@@ -345,8 +475,10 @@ echo "    $DMG ($(stat -f%z "$DMG") bytes)"
 
 # TODO(notarization): enable once there is a Developer ID ($99/y account).
 # Revisit trigger is recorded in PROJECT-CONTEXT.md's open questions.
-# Note this replaces the ad-hoc signing above rather than adding to it, and
-# must happen BEFORE packaging so both artifacts carry the stapled ticket.
+# Note this replaces the self-signed identity above rather than adding to it,
+# and must happen BEFORE packaging so both artifacts carry the stapled ticket.
+# Switching changes the designated requirement once more, so users re-grant
+# Accessibility and Face Unlock's keychain access one last time.
 #
 # codesign --force --sign "Developer ID Application: TEAM" \
 #     --options runtime --timestamp "$APP"
