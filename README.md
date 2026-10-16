@@ -163,7 +163,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.3.1**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.3.1) <br><sub>Latest</sub> | Oct 15, 2026 | **Update notices in the notch.** PopNotch now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |
+| [**1.3.2**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.3.2) <br><sub>Latest</sub> | Oct 15, 2026 | **Permissions that survive updates.** PopNotch is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
+| **1.3.1** | Oct 15, 2026 | **Update notices in the notch.** PopNotch now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |
 | **1.3.0** | Oct 15, 2026 | **Face Unlock**: unlock your Mac at the lock screen with your face, using the built-in camera. Face data is encrypted and never leaves your Mac. Off by default. |
 | **1.2.3** | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
 | **1.2.2** | Oct 10, 2026 | Mixer sliders can turn apps **up to 2×**, with a limiter so nothing clips. The new battery page shows **time until full or empty** and live power draw. Battery readings work on macOS 27. |
