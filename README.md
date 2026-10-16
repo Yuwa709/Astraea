@@ -53,6 +53,12 @@ PopNotch is a native Swift and SwiftUI app. It has no web runtime and no Electro
 - **Clipboard history**, one click from the notch.
 - **File Shelf**: drop files on the notch, then drag them out again or share them over AirDrop.
 
+### 🔓 Face Unlock *(optional)*
+
+- Wake your Mac at the lock screen and look at the camera. When PopNotch recognises you, it types your password. Nothing leaves your Mac.
+- Enrol a few angles of your face in Settings. Your face is stored as encrypted numbers, never as pictures, with the key in your login keychain. Touch ID or your password is needed before any of it can be changed.
+- A liveness check refuses a scan that shows screen glare or the edge of a phone, and only the built-in camera is used. A carefully held photo can still pass: this is a convenience, not Apple's Face ID, and your password remains the real lock.
+
 ### ⚙️ Everything else
 
 - Launch at login, adjustable hover delay, per-feature on/off switches, and a Permissions pane that shows exactly what's granted.
@@ -116,8 +122,10 @@ open /Applications/PopNotch.app
 |---|---|---|
 | **Automation** for Spotify and/or Music | The notch first opens with that player running | Reading the current track and controlling playback works over AppleScript. One prompt per player. |
 | **System Audio Recording** | You turn on the audio visualiser, or per-app volume for apps other than Spotify and Music | The visualiser reads the audio to draw it, and the mixer adjusts each app's audio stream. Neither records or stores anything. |
+| **Camera** | You add a face in Face Unlock | Enrolling and recognising your face. Frames are processed on your Mac and never saved. |
+| **Accessibility** | You turn on **Unlock the Mac at the lock screen** | Typing your password into the lock screen's password field. |
 
-Decline either one and the rest of the notch keeps working. The affected feature hides or shows a one-line hint. You can grant the permission later in **System Settings → Privacy & Security**, and PopNotch's **Permissions** pane links straight there.
+Decline any of them and the rest of the notch keeps working. The affected feature hides or shows a one-line hint. You can grant the permission later in **System Settings → Privacy & Security**, and PopNotch's **Permissions** pane links straight there.
 
 ## Privacy
 
@@ -127,6 +135,8 @@ Decline either one and the rest of the notch keeps working. The affected feature
 - **Lyrics lookups** to [LRCLIB](https://lrclib.net), which receive the song title, artist and duration, and nothing about you
 - **Update checks**, only when you press the button
 
+Face Unlock works entirely on your Mac. Enrolled faces are stored as encrypted embeddings in your Library folder, the camera runs only while you enrol or at the lock screen, and no frame is ever written to disk or sent anywhere.
+
 The source is public so you can check.
 
 ## Known limitations
@@ -135,6 +145,7 @@ The source is public so you can check.
 - **Other players get fewer controls.** Players reached through macOS's now-playing session have no Up Next and no like button.
 - **Lyrics coverage is whatever LRCLIB has.** Instrumentals and obscure tracks may show none. Untimed, plain-text lyrics are skipped because the notch can't scroll them.
 - **Not notarized.** See [Install](#install).
+- **Face Unlock is not Face ID.** It matches a flat camera image; the liveness check stops screens and phone edges, not every photo. It needs the built-in camera, so it is off with the lid closed, and it does nothing at the FileVault or login screen.
 - **External displays** get a plain fallback strip, not the full experience.
 
 <details>
@@ -152,7 +163,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.2.3**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.2.3) <br><sub>Latest</sub> | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
+| [**1.3.0**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.3.0) <br><sub>Latest</sub> | Oct 15, 2026 | **Face Unlock**: unlock your Mac at the lock screen with your face, using the built-in camera. Face data is encrypted and never leaves your Mac. Off by default. |
+| **1.2.3** | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
 | **1.2.2** | Oct 10, 2026 | Mixer sliders can turn apps **up to 2×**, with a limiter so nothing clips. The new battery page shows **time until full or empty** and live power draw. Battery readings work on macOS 27. |
 | **1.2.1** | Sep 30, 2026 | **Per-app bass boost** at +6, +12 or +18 dB. **Up Next** for Apple Music playlists and albums. |
 | **1.2.0** | Sep 28, 2026 | **Per-app output routing**, to send each app to its own speakers or headphones. Spotify account sign-in removed, which ends the keychain prompts. New Open Anyway install flow. |
