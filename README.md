@@ -63,7 +63,7 @@ PopNotch is a native Swift and SwiftUI app. It has no web runtime and no Electro
 
 - Launch at login, adjustable hover delay, per-feature on/off switches, and a Permissions pane that shows exactly what's granted.
 - Respects **Reduce Motion**.
-- Manual-only updates through Sparkle.
+- Updates through Sparkle. PopNotch checks once a day and, when a new version is out, says so in the notch: a badge beside the camera, and an Install button when you hover. Turn off **Update Notices** in Modules to check manually from About instead.
 
 Optional features are **off by default**. Anything you leave off doesn't run and uses no CPU or battery.
 

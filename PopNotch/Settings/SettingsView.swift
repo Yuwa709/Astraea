@@ -62,6 +62,9 @@ struct SettingsView: View {
     /// updater — tests build it with nil, and the Check for Updates row
     /// simply does not render.
     let updater: SPUUpdater?
+    /// What a scheduled check found. Optional for the same reason; the
+    /// About row then only offers the manual check.
+    var updates: UpdateService?
     /// Injected rather than calling `NSApp.terminate` inline, so the view
     /// stays free of app lifecycle and a test can build one.
     let onQuit: () -> Void
@@ -116,7 +119,7 @@ struct SettingsView: View {
         case .permissions:
             PermissionsSettingsTab()
         case .about:
-            AboutSettingsTab(updater: updater, onQuit: onQuit)
+            AboutSettingsTab(updater: updater, updates: updates, onQuit: onQuit)
         }
     }
 }
@@ -424,6 +427,7 @@ private struct LaunchAtLoginRow: View {
 struct AboutSettingsTab: View {
 
     let updater: SPUUpdater?
+    var updates: UpdateService?
     let onQuit: () -> Void
 
     /// Optional rather than force-unwrapped; the link just does not render
@@ -460,7 +464,7 @@ struct AboutSettingsTab: View {
 
             if let updater {
                 Spacer(minLength: 16)
-                UpdateCheckRow(updater: updater)
+                UpdateCheckRow(updater: updater, updates: updates)
             }
 
             // Keeps Quit pinned to the bottom.
@@ -478,8 +482,12 @@ struct AboutSettingsTab: View {
 }
 
 
-/// Manual update check, in About because the menu bar icon is optional — an
+/// Update check, in About because the menu bar icon is optional — an
 /// updater reachable only from a menu that may not exist is not reachable.
+///
+/// Mirrors the notch: when a scheduled check has found something the row
+/// says which version and the button installs it, the same hand-off to
+/// Sparkle the notch card makes. Otherwise it is the manual check.
 ///
 /// Its own view so the `@StateObject` below only exists when there is an
 /// updater to observe.
@@ -488,11 +496,25 @@ private struct UpdateCheckRow: View {
     private static let logger = Logger(subsystem: "com.techie.PopNotch", category: "Settings")
 
     let updater: SPUUpdater
+    var updates: UpdateService?
     @StateObject private var model: UpdateCheckModel
 
-    init(updater: SPUUpdater) {
+    init(updater: SPUUpdater, updates: UpdateService?) {
         self.updater = updater
+        self.updates = updates
         _model = StateObject(wrappedValue: UpdateCheckModel(updater: updater))
+    }
+
+    private var available: String? { updates?.availableVersion }
+
+    private var detail: String {
+        if let available {
+            return "PopNotch \(available) is available."
+        }
+        if updates?.automaticChecksEnabled == true {
+            return "Checks once a day and shows new versions in the notch."
+        }
+        return "Checks only when you ask. Turn on Update Notices in Modules to be told in the notch."
     }
 
     var body: some View {
@@ -500,7 +522,7 @@ private struct UpdateCheckRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Updates")
                     .font(.callout)
-                Text("PopNotch does not check on its own.")
+                Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -509,11 +531,11 @@ private struct UpdateCheckRow: View {
             // background agent: the same narrow click-driven carve-out to
             // hard rule 4 the settings gear documents. No hover path
             // reaches this.
-            Button("Check for Updates…") {
+            Button(available == nil ? "Check for Updates…" : "Install Update…") {
                 Self.logger.notice("Update check requested from Settings")
                 updater.checkForUpdates()
             }
-            .disabled(!model.canCheckForUpdates)
+            .disabled(!model.canCheckForUpdates && available == nil)
         }
     }
 }

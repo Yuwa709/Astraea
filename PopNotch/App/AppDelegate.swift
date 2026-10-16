@@ -97,24 +97,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Updates
 
+    /// What a scheduled check found, and the notch's way to act on it. The
+    /// standard user driver's delegate (gentle reminders), so a background
+    /// find never opens Sparkle's alert on its own; see `UpdateService`.
+    private(set) lazy var updateService = UpdateService()
+
     /// Sparkle's updater, owned here because it must outlive any view.
     ///
-    /// **Manual checks only** — `startingUpdater: true` starts the updater so
-    /// a check can be requested, and `automaticallyChecksForUpdates` is forced
-    /// off in `applicationDidFinishLaunching`. Scheduled background checks are
-    /// deliberately not enabled: Sparkle logs a specific warning for
-    /// `LSUIElement` apps that schedule them without implementing gentle
-    /// reminders, because an update alert behind other windows is easy to miss
-    /// when there is no Dock icon to bounce. Turning them on is a separate
-    /// decision that owes the user a visible surface — most likely the notch.
+    /// `startingUpdater: true` starts the updater so a check can be requested.
+    /// Whether it also checks on its own is the Update Notices module's
+    /// switch (`UpdateModule.isEnabled`, on by default), applied through
+    /// `updateService` on every launch so a stale stored preference, or a
+    /// future Sparkle default, cannot decide it for an app with no Dock icon.
+    /// Scheduled checks became acceptable once they had a visible surface:
+    /// Sparkle logs a specific warning for `LSUIElement` apps that schedule
+    /// them without gentle reminders, because an alert behind other windows
+    /// is easy to miss when there is no Dock icon to bounce. The notch is
+    /// that surface now.
     ///
-    /// Both delegates are nil: the feed URL and public key come from
-    /// `PopNotch/Info.plist` (`SUFeedURL`, `SUPublicEDKey`), and the standard
-    /// user driver's own UI is what we want.
+    /// The updater delegate is nil: the feed URL and public key come from
+    /// `PopNotch/Info.plist` (`SUFeedURL`, `SUPublicEDKey`). The standard
+    /// user driver's own UI is still what shows once the user clicks through.
     private(set) lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
-        userDriverDelegate: nil
+        userDriverDelegate: updateService
     )
 
     // MARK: - Settings window
@@ -176,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 facePasswordStore: facePasswordStore,
                 faceUnlockCoordinator: faceUnlockCoordinator,
                 updater: updaterController.updater,
+                updates: updateService,
                 onQuit: { NSApp.terminate(nil) },
                 onPreferMusicOverVideoChange: { [weak self] on in
                     self?.systemMediaSource?.prefersMusicOverVideo = on
@@ -219,10 +227,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.start()
         installSignalHandling()
 
-        // Manual only. Set every launch rather than once, so a stale stored
-        // preference — or a future Sparkle default — cannot quietly turn
-        // background checking on for an app with no Dock icon to notify from.
-        updaterController.updater.automaticallyChecksForUpdates = false
+        // The updater exists from here. Whether it checks on its own is set
+        // below, when the Update Notices module is registered with its
+        // stored preference; the service applies it to the updater either way.
+        updateService.updater = updaterController.updater
 
         // The panel's gear posts this. Observed here rather than in a view so
         // it survives whatever the scene graph is doing.
@@ -298,9 +306,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Independent of the App Volume module's own on/off: the warning it
         // feeds is about the visualiser too, which runs either way.
         appVolume.startConflictWatch()
+        // After media on purpose: the first standby module with wing content
+        // provides the wings, so artwork and waveform keep them while music
+        // plays and the update badge shows the rest of the time. The found
+        // update still opens the notch once, as a live activity.
+        let updates = UpdateModule(service: updateService)
+        updates.onLiveActivityRequest = { [weak self] request in
+            self?.coordinator.requestLiveActivity(request)
+        }
+        updates.onPresenceChange = { [weak self] in
+            self?.coordinator.refreshPresentation()
+        }
         let clipboard = ClipboardModule(service: clipboardService)
         let modules: [any NotchModule] = [
             media,
+            updates,
             SystemStatsModule(service: statsService)
         ]
         // register() applies the stored preference itself, so a module can
