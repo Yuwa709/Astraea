@@ -146,8 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if settingsWindow == nil {
             // `.fullSizeContentView` and a transparent titlebar are
-            // load-bearing, not cosmetic (measured 2026-09-19, harness in
-            // `~/PopNotch-spikes/settingsinset`).
+            // load-bearing, not cosmetic (measured 2026-09-19 with a
+            // throwaway harness).
             //
             // `NavigationSplitView` with a sidebar makes AppKit draw a
             // 52pt titlebar background and scroll pocket — macOS 26's
