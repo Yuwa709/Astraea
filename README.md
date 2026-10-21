@@ -1,6 +1,6 @@
 <div align="center">
 
-# PopNotch
+# Astraea
 
 **Turn the MacBook camera notch into something useful.**
 
