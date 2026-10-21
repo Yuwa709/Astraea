@@ -1,6 +1,6 @@
 # Third-party licences
 
-PopNotch itself is MIT licensed (see `LICENSE`). It redistributes, in binary
+Astraea itself is MIT licensed (see `LICENSE`). It redistributes, in binary
 form, the components listed below. Their licence terms follow verbatim.
 
 ---
@@ -11,7 +11,7 @@ form, the components listed below. Their licence terms follow verbatim.
 - **Licence:** BSD 3-Clause
 - **Copyright:** Copyright (c) 2025, Jonas van den Berg and contributors
 
-### What PopNotch ships, and where it came from
+### What Astraea ships, and where it came from
 
 All three artifacts originate from `ungive/mediaremote-adapter`. They were
 obtained as the built products of **`ungive/media-control` v0.7.6**
@@ -21,9 +21,9 @@ Homebrew's `media-control` formula declares `license "BSD-3-Clause"`, and the
 `media-control` README states the same terms and copyright. At revision
 `815bcb5` the `media-control` repository carries no `LICENSE` file of its own;
 the licence text below is the one shipped in the `mediaremote-adapter`
-submodule, which is the origin of every file PopNotch redistributes.
+submodule, which is the origin of every file Astraea redistributes.
 
-| Shipped at (in `PopNotch.app`) | In this repo | Upstream origin |
+| Shipped at (in `Astraea.app`) | In this repo | Upstream origin |
 |---|---|---|
 | `Contents/Frameworks/MediaRemoteAdapter.framework` | `vendor/MediaRemoteAdapter.framework` | `ungive/mediaremote-adapter`, compiled from `src/` |
 | `Contents/MacOS/MediaRemoteAdapterTestClient` | `vendor/MediaRemoteAdapterTestClient` | `ungive/mediaremote-adapter`, compiled from `src/test` |
@@ -31,14 +31,14 @@ submodule, which is the origin of every file PopNotch redistributes.
 
 `media-control`'s own `bin/media-control` — a Perl wrapper that only parses
 command names and re-executes `mediaremote-adapter.pl` — is deliberately **not**
-redistributed. PopNotch invokes the adapter script directly.
+redistributed. Astraea invokes the adapter script directly.
 
 ### Modifications
 
 The Perl script is unmodified and retains its inline copyright header. The two
 Mach-O objects are unmodified in content; at release time `scripts/release.sh`
 rewrites the framework's `LC_ID_DYLIB` install name (which upstream's build
-hardcodes to a Homebrew prefix) and re-signs both objects with PopNotch's own
+hardcodes to a Homebrew prefix) and re-signs both objects with Astraea's own
 ad-hoc signature, as macOS bundle embedding requires.
 
 ### Licence text
@@ -82,11 +82,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - **Licence:** MIT
 - **Copyright:** Copyright (c) 2026 Jonathan Zhou
 
-### What PopNotch ships, and where it came from
+### What Astraea ships, and where it came from
 
 Face Unlock's enrolment pipeline and password vault are adapted from Glance
 at revision `b97f521397ec1197ba17768ba797cae1e628848d`. Every adapted file is
-in `PopNotch/Modules/FaceUnlock/` and says so in its header. Only Glance's own
+in `Astraea/Modules/FaceUnlock/` and says so in its header. Only Glance's own
 code was taken: face detection, alignment, the Core ML embedder wrapper,
 matching, encrypted face storage, camera capture, the guided-pose
 enrolment rules, the enrolment ring, the session-key and encrypted-password
@@ -100,9 +100,9 @@ shipped either: the embedder wrapper now loads Intel's model, below.
 
 ### Modifications
 
-Restructured to PopNotch's module and settings conventions. The encryption
+Restructured to Astraea's module and settings conventions. The encryption
 key lives in the login keychain instead of behind Touch ID, because
-PopNotch's ad-hoc-signed builds cannot hold Touch ID-gated items; Touch ID
+Astraea's ad-hoc-signed builds cannot hold Touch ID-gated items; Touch ID
 or the Mac password is instead checked by the app before the key is used.
 The encrypted password is a file, not a second keychain item, and is
 verified against the user's account before it is stored.
@@ -154,16 +154,16 @@ SOFTWARE.
   Apache 2.0 text with no copyright line of its own, and the repository has
   no `NOTICE` file.
 
-### What PopNotch ships, and where it came from
+### What Astraea ships, and where it came from
 
 Face Unlock's face-embedding model. It replaces InsightFace's ArcFace
 `w600k_mbf` weights, taken with Glance's code and licensed for
 non-commercial research only, which Face Unlock used before and which
-PopNotch no longer ships.
+Astraea no longer ships.
 
-| Shipped at (in `PopNotch.app`) | In this repo | Upstream origin |
+| Shipped at (in `Astraea.app`) | In this repo | Upstream origin |
 |---|---|---|
-| `Contents/Resources/FaceReidentification.mlmodelc` | `PopNotch/Modules/FaceUnlock/FaceReidentification.mlpackage` (Xcode compiles it at build time) | Open Model Zoo's OpenVINO IR of `face-reidentification-retail-0095`, FP32 |
+| `Contents/Resources/FaceReidentification.mlmodelc` | `Astraea/Modules/FaceUnlock/FaceReidentification.mlpackage` (Xcode compiles it at build time) | Open Model Zoo's OpenVINO IR of `face-reidentification-retail-0095`, FP32 |
 
 The IR was downloaded from
 https://storage.openvinotoolkit.org/repositories/open_model_zoo/2023.0/models_bin/1/face-reidentification-retail-0095/FP32/

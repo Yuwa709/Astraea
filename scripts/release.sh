@@ -1,11 +1,11 @@
 #!/bin/bash
-# Build, sign with PopNotch's self-signed identity, package, and sign an
-# appcast for one PopNotch release.
+# Build, sign with Astraea's self-signed identity, package, and sign an
+# appcast for one Astraea release.
 #
 # Produces three artifacts in dist/ and uploads NOTHING:
 #
-#   PopNotch-<version>.dmg   first-time installs, with an /Applications symlink
-#   PopNotch-<version>.zip   Sparkle updates
+#   Astraea-<version>.dmg   first-time installs, with an /Applications symlink
+#   Astraea-<version>.zip   Sparkle updates
 #   appcast.xml              the signed feed Sparkle reads
 #
 # Both packages come from ONE signed .app. Signing twice would produce two
@@ -56,12 +56,12 @@ if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
     exit 1
 fi
 
-REPO="Yuwa709/PopNotch"
+REPO="Yuwa709/Astraea"
 DIST="dist"
-ZIP="$DIST/PopNotch-$VERSION.zip"
-DMG="$DIST/PopNotch-$VERSION.dmg"
+ZIP="$DIST/Astraea-$VERSION.zip"
+DMG="$DIST/Astraea-$VERSION.dmg"
 STAGING="$DIST/staging"
-ENTITLEMENTS="PopNotch/PopNotch.entitlements"
+ENTITLEMENTS="Astraea/Astraea.entitlements"
 
 # --- signing identity --------------------------------------------------------
 # Releases are signed with a self-signed certificate, "PopNotch Self-Signed
@@ -70,7 +70,7 @@ ENTITLEMENTS="PopNotch/PopNotch.entitlements"
 # requirement is a bare cdhash: every build looked like a different app, so the
 # Accessibility grant and the Face Unlock keychain item's ACL reset on every
 # update. A certificate gives the stable requirement
-#     identifier "com.techie.PopNotch" and certificate leaf = H"<sha1>"
+#     identifier "com.techie.Astraea" and certificate leaf = H"<sha1>"
 # which every build signed with this one cert satisfies.
 #
 # Selected by SHA-1, looked up by exact Common Name. NO -v on find-identity:
@@ -114,7 +114,7 @@ fi
 SIGN_SHA1="$SIGN_SHA1S"
 if [[ "$SIGN_SHA1" != "$EXPECTED_SIGN_SHA1" ]]; then
     echo "!! \"$SIGN_NAME\" is $SIGN_SHA1, expected $EXPECTED_SIGN_SHA1." >&2
-    echo "   This is a different certificate. Shipping it would change PopNotch's" >&2
+    echo "   This is a different certificate. Shipping it would change Astraea's" >&2
     echo "   designated requirement and reset every user's grants. See the" >&2
     echo "   EXPECTED_SIGN_SHA1 comment in this script." >&2
     exit 1
@@ -134,7 +134,7 @@ if [[ -z "$GENERATE_APPCAST" ]]; then
 !! Could not find Sparkle's generate_appcast.
 
    It lives in the resolved Swift Package artifacts under DerivedData, which a
-   clean build removes. To restore it, open PopNotch.xcodeproj and either:
+   clean build removes. To restore it, open Astraea.xcodeproj and either:
        File > Packages > Resolve Package Versions
    or build the app once. Then re-run this script.
 MSG
@@ -146,12 +146,12 @@ fi
 # --- launch smoke test ---------------------------------------------------
 # The check that would have caught 1.0.0. A signature can be individually valid
 # on every component and still refuse to load — only actually starting the
-# process proves dyld accepts it. Briefly runs a second PopNotch, which draws
+# process proves dyld accepts it. Briefly runs a second Astraea, which draws
 # its own notch panel for a few seconds before being killed.
 smoke_launch() {
     local app="$1" label="$2" err pid
     err=$(mktemp)
-    "$app/Contents/MacOS/PopNotch" >/dev/null 2>"$err" &
+    "$app/Contents/MacOS/Astraea" >/dev/null 2>"$err" &
     pid=$!
     sleep 4
     if kill -0 "$pid" 2>/dev/null; then
@@ -173,7 +173,7 @@ smoke_launch() {
 # --- build -------------------------------------------------------------------
 # CFBundleShortVersionString and CFBundleVersion come from these two build
 # settings (GENERATE_INFOPLIST_FILE synthesizes the plist from them); neither
-# lives in PopNotch/Info.plist, which carries only the custom Sparkle keys.
+# lives in Astraea/Info.plist, which carries only the custom Sparkle keys.
 # Overriding them here is what makes CFBundleVersion match sparkle:version in
 # the appcast, since generate_appcast reads CFBundleVersion out of the app.
 #
@@ -194,7 +194,7 @@ smoke_launch() {
 # No `clean`: it is not needed for correctness and risks removing the SPM
 # artifacts that generate_appcast lives in.
 echo "==> Building Release $VERSION"
-xcodebuild -scheme PopNotch -configuration Release -destination 'platform=macOS' \
+xcodebuild -scheme Astraea -configuration Release -destination 'platform=macOS' \
     MARKETING_VERSION="$VERSION" \
     CURRENT_PROJECT_VERSION="$VERSION" \
     CODE_SIGN_STYLE=Manual \
@@ -203,10 +203,10 @@ xcodebuild -scheme PopNotch -configuration Release -destination 'platform=macOS'
     CLANG_COVERAGE_MAPPING=NO \
     build | grep -E "error:|warning: (unable|failed)|BUILD (SUCCEEDED|FAILED)" || true
 
-BUILT_DIR=$(xcodebuild -scheme PopNotch -configuration Release -destination 'platform=macOS' \
+BUILT_DIR=$(xcodebuild -scheme Astraea -configuration Release -destination 'platform=macOS' \
     -showBuildSettings 2>/dev/null \
     | awk -F' = ' '/^ *BUILT_PRODUCTS_DIR/ { print $2; exit }')
-APP="$BUILT_DIR/PopNotch.app"
+APP="$BUILT_DIR/Astraea.app"
 if [[ ! -d "$APP" ]]; then
     echo "!! No built app at $APP" >&2
     exit 1
@@ -282,7 +282,7 @@ echo "    signed Sparkle.framework"
 #
 # No --preserve-metadata=entitlements and no --entitlements file. Both objects
 # ship unentitled and must stay that way. The adapter framework is never loaded
-# into PopNotch -- mediaremote-adapter.pl dlopens it into /usr/bin/perl, which
+# into Astraea -- mediaremote-adapter.pl dlopens it into /usr/bin/perl, which
 # is Apple-signed as com.apple.perl, and THAT identity is the only reason
 # MediaRemote answers at all. Entitling these would be notarization risk for no
 # gain (CLAUDE.md, distribution).
@@ -328,7 +328,7 @@ echo "    signed MediaRemoteAdapterTestClient"
 codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none \
     --entitlements "$RELEASE_ENTITLEMENTS" "$APP"
 rm -f "$RELEASE_ENTITLEMENTS"
-echo "    signed PopNotch.app"
+echo "    signed Astraea.app"
 
 # --- verify ------------------------------------------------------------------
 # This is the gate. Sparkle rejects an update whose Apple code signature is
@@ -408,7 +408,7 @@ echo "    every Mach-O in the bundle signed by $SIGN_NAME"
 #
 # Counted with `grep -c`, never `grep -q`: -q exits on the first match, nm dies
 # of SIGPIPE, and under pipefail that failure turns a hit into a pass.
-BINARY="$APP/Contents/MacOS/PopNotch"
+BINARY="$APP/Contents/MacOS/Astraea"
 if ! LOAD_COMMANDS=$(otool -l "$BINARY") || ! SYMBOLS=$(nm "$BINARY"); then
     echo "!! Could not read $BINARY with otool and nm. Refusing to package." >&2
     exit 1
@@ -465,10 +465,10 @@ ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 LENGTH=$(stat -f%z "$ZIP")
 echo "    $ZIP ($LENGTH bytes)"
 
-ditto "$APP" "$STAGING/PopNotch.app"
+ditto "$APP" "$STAGING/Astraea.app"
 # The drag-to-install target users expect in a DMG window.
 ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "PopNotch $VERSION" -srcfolder "$STAGING" \
+hdiutil create -volname "Astraea $VERSION" -srcfolder "$STAGING" \
     -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGING"
 echo "    $DMG ($(stat -f%z "$DMG") bytes)"
@@ -516,20 +516,20 @@ cleanup() {
 trap cleanup EXIT
 
 ditto -x -k "$ZIP" "$VERIFY_DIR"
-if ! codesign --verify --deep --strict "$VERIFY_DIR/PopNotch.app" 2>&1 | sed 's/^/    /'; then
+if ! codesign --verify --deep --strict "$VERIFY_DIR/Astraea.app" 2>&1 | sed 's/^/    /'; then
     echo "!! Signature broke during zip packaging. Refusing to publish." >&2
     exit 1
 fi
 echo "    signature intact after unzip"
-smoke_launch "$VERIFY_DIR/PopNotch.app" "unzipped"
+smoke_launch "$VERIFY_DIR/Astraea.app" "unzipped"
 
 hdiutil attach "$DMG" -nobrowse -quiet -mountpoint "$MOUNT_DIR"
-if ! codesign --verify --deep --strict "$MOUNT_DIR/PopNotch.app" 2>&1 | sed 's/^/    /'; then
+if ! codesign --verify --deep --strict "$MOUNT_DIR/Astraea.app" 2>&1 | sed 's/^/    /'; then
     echo "!! Signature broke during DMG packaging. Refusing to publish." >&2
     exit 1
 fi
 echo "    signature intact inside DMG"
-smoke_launch "$MOUNT_DIR/PopNotch.app" "inside DMG"
+smoke_launch "$MOUNT_DIR/Astraea.app" "inside DMG"
 detach_dmg "$MOUNT_DIR"
 
 # --- appcast -----------------------------------------------------------------

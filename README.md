@@ -7,16 +7,16 @@
 Hover the notch and it expands into a panel with what's playing, your system stats, and a per-app volume mixer.<br>
 Move the cursor away and it disappears back into the bezel.
 
-<a href="https://github.com/Yuwa709/PopNotch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Yuwa709/PopNotch?style=for-the-badge&label=version&color=FF9F0A"></a>
+<a href="https://github.com/Yuwa709/Astraea/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Yuwa709/Astraea?style=for-the-badge&label=version&color=FF9F0A"></a>
 <img alt="macOS 14.2 or later" src="https://img.shields.io/badge/macOS-14.2%2B-111111?style=for-the-badge&logo=apple&logoColor=white">
 <img alt="Apple Silicon only" src="https://img.shields.io/badge/Apple_Silicon-arm64-111111?style=for-the-badge&logo=apple&logoColor=white">
 <br>
 <img alt="Swift 5" src="https://img.shields.io/badge/Swift-5-F05138?style=for-the-badge&logo=swift&logoColor=white">
 <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-0A84FF?style=for-the-badge&logo=swift&logoColor=white">
-<a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Yuwa709/PopNotch?style=for-the-badge&color=34C759"></a>
-<a href="https://github.com/Yuwa709/PopNotch/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Yuwa709/PopNotch?style=for-the-badge&logo=github&color=FFD60A"></a>
+<a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Yuwa709/Astraea?style=for-the-badge&color=34C759"></a>
+<a href="https://github.com/Yuwa709/Astraea/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Yuwa709/Astraea?style=for-the-badge&logo=github&color=FFD60A"></a>
 
-[**Download**](https://github.com/Yuwa709/PopNotch/releases/latest) · [Features](#features) · [Install](#install) · [Build from source](#build-from-source) · [Privacy](#privacy) · [Release history](#release-history)
+[**Download**](https://github.com/Yuwa709/Astraea/releases/latest) · [Features](#features) · [Install](#install) · [Build from source](#build-from-source) · [Privacy](#privacy) · [Release history](#release-history)
 
 </div>
 
@@ -25,7 +25,7 @@ Move the cursor away and it disappears back into the bezel.
 
 ---
 
-PopNotch is a native Swift and SwiftUI app. It has no web runtime and no Electron, and it lives in the menu bar without a Dock icon. An overlay that costs you battery is worse than no overlay, so nothing samples in the background. Stats stop polling when they're off screen or the display is asleep, and playback updates arrive as notifications from the player instead of by polling it.
+Astraea is a native Swift and SwiftUI app. It has no web runtime and no Electron, and it lives in the menu bar without a Dock icon. An overlay that costs you battery is worse than no overlay, so nothing samples in the background. Stats stop polling when they're off screen or the display is asleep, and playback updates arrive as notifications from the player instead of by polling it.
 
 ## Features
 
@@ -55,7 +55,7 @@ PopNotch is a native Swift and SwiftUI app. It has no web runtime and no Electro
 
 ### 🔓 Face Unlock *(optional)*
 
-- Wake your Mac at the lock screen and look at the camera. When PopNotch recognises you, it types your password. Nothing leaves your Mac.
+- Wake your Mac at the lock screen and look at the camera. When Astraea recognises you, it types your password. Nothing leaves your Mac.
 - Enrol a few angles of your face in Settings. Your face is stored as encrypted numbers, never as pictures, with the key in your login keychain. Touch ID or your password is needed before any of it can be changed.
 - A liveness check refuses a scan that shows screen glare or the edge of a phone, and only the built-in camera is used. A carefully held photo can still pass: this is a convenience, not Apple's Face ID, and your password remains the real lock.
 
@@ -63,7 +63,7 @@ PopNotch is a native Swift and SwiftUI app. It has no web runtime and no Electro
 
 - Launch at login, adjustable hover delay, per-feature on/off switches, and a Permissions pane that shows exactly what's granted.
 - Respects **Reduce Motion**.
-- Updates through Sparkle. PopNotch checks once a day and, when a new version is out, says so in the notch: a badge beside the camera, and an Install button when you hover. Turn off **Update Notices** in Modules to check manually from About instead.
+- Updates through Sparkle. Astraea checks once a day and, when a new version is out, says so in the notch: a badge beside the camera, and an Install button when you hover. Turn off **Update Notices** in Modules to check manually from About instead.
 
 Optional features are **off by default**. Anything you leave off doesn't run and uses no CPU or battery.
 
@@ -79,28 +79,28 @@ It runs on any Apple Silicon Mac. A display without a notch gets a small fallbac
 
 ## Install
 
-Download the latest `PopNotch-<version>.dmg` from [**Releases**](https://github.com/Yuwa709/PopNotch/releases/latest).
+Download the latest `Astraea-<version>.dmg` from [**Releases**](https://github.com/Yuwa709/Astraea/releases/latest).
 
-PopNotch is not notarized, so macOS blocks the first launch until you approve it:
+Astraea is not notarized, so macOS blocks the first launch until you approve it:
 
-1. Open the DMG and drag **PopNotch** to **Applications**.
-2. Double-click PopNotch. macOS blocks it.
-3. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the PopNotch notice.
+1. Open the DMG and drag **Astraea** to **Applications**.
+2. Double-click Astraea. macOS blocks it.
+3. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Astraea notice.
 4. Authenticate, then click **Open**. macOS only asks once.
 
 > [!NOTE]
-> PopNotch has no Dock icon and no window, so a blocked launch looks like nothing happened. It isn't broken. It's waiting for step 3.
+> Astraea has no Dock icon and no window, so a blocked launch looks like nothing happened. It isn't broken. It's waiting for step 3.
 
 This is only needed on first install. Updates through **Settings → About → Check for Updates** don't repeat it.
 
 <details>
 <summary><b>Troubleshooting</b></summary>
 
-- **No Open Anyway button?** It only appears after a launch attempt, and only for a while. Double-click PopNotch again, then reopen Privacy & Security.
-- **"PopNotch is damaged" with no Open Anyway button?** On macOS 26 some unnotarized apps get this message instead. For that case only, run:
+- **No Open Anyway button?** It only appears after a launch attempt, and only for a while. Double-click Astraea again, then reopen Privacy & Security.
+- **"Astraea is damaged" with no Open Anyway button?** On macOS 26 some unnotarized apps get this message instead. For that case only, run:
 
   ```bash
-  xattr -cr /Applications/PopNotch.app
+  xattr -cr /Applications/Astraea.app
   ```
 
 </details>
@@ -108,10 +108,10 @@ This is only needed on first install. Updates through **Settings → About → C
 ## Build from source
 
 ```bash
-git clone https://github.com/Yuwa709/PopNotch.git
-cd PopNotch
+git clone https://github.com/Yuwa709/Astraea.git
+cd Astraea
 ./scripts/install.sh
-open /Applications/PopNotch.app
+open /Applications/Astraea.app
 ```
 
 `install.sh` builds the app, replaces any running copy, and installs it to `/Applications`. Builds you compile yourself are never quarantined, so they skip the Open Anyway step.
@@ -125,7 +125,7 @@ open /Applications/PopNotch.app
 | **Camera** | You add a face in Face Unlock | Enrolling and recognising your face. Frames are processed on your Mac and never saved. |
 | **Accessibility** | You turn on **Unlock the Mac at the lock screen** | Typing your password into the lock screen's password field. |
 
-Decline any of them and the rest of the notch keeps working. The affected feature hides or shows a one-line hint. You can grant the permission later in **System Settings → Privacy & Security**, and PopNotch's **Permissions** pane links straight there.
+Decline any of them and the rest of the notch keeps working. The affected feature hides or shows a one-line hint. You can grant the permission later in **System Settings → Privacy & Security**, and Astraea's **Permissions** pane links straight there.
 
 ## Privacy
 
@@ -163,8 +163,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.3.2**](https://github.com/Yuwa709/PopNotch/releases/tag/v1.3.2) <br><sub>Latest</sub> | Oct 15, 2026 | **Permissions that survive updates.** PopNotch is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
-| **1.3.1** | Oct 15, 2026 | **Update notices in the notch.** PopNotch now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |
+| [**1.3.2**](https://github.com/Yuwa709/Astraea/releases/tag/v1.3.2) <br><sub>Latest</sub> | Oct 15, 2026 | **Permissions that survive updates.** Astraea is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
+| **1.3.1** | Oct 15, 2026 | **Update notices in the notch.** Astraea now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |
 | **1.3.0** | Oct 15, 2026 | **Face Unlock**: unlock your Mac at the lock screen with your face, using the built-in camera. Face data is encrypted and never leaves your Mac. Off by default. |
 | **1.2.3** | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
 | **1.2.2** | Oct 10, 2026 | Mixer sliders can turn apps **up to 2×**, with a limiter so nothing clips. The new battery page shows **time until full or empty** and live power draw. Battery readings work on macOS 27. |
