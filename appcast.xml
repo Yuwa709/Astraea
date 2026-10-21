@@ -3,14 +3,14 @@
     <channel>
         <title>Astraea</title>
         <item>
-            <title>1.3.2</title>
-            <pubDate>Thu, 15 Oct 2026 23:03:22 -0700</pubDate>
+            <title>1.4.0</title>
+            <pubDate>Wed, 21 Oct 2026 15:31:19 -0700</pubDate>
             <link>https://github.com/Yuwa709/Astraea</link>
-            <sparkle:version>1.3.2</sparkle:version>
-            <sparkle:shortVersionString>1.3.2</sparkle:shortVersionString>
+            <sparkle:version>1.4.0</sparkle:version>
+            <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/Yuwa709/Astraea/releases/download/v1.3.2/PopNotch-1.3.2.zip" length="4776358" type="application/octet-stream" sparkle:edSignature="gNyFJjZppttzvTAL2bTWwQRbWhPtJE7CyIt182xbA2G0+IPjvvdl0e+bEwOTe1qQFejP3hRXUgRvbuE8Gs9UAw=="/>
+            <enclosure url="https://github.com/Yuwa709/Astraea/releases/download/v1.4.0/Astraea-1.4.0.zip" length="7599271" type="application/octet-stream" sparkle:edSignature="6EJaFz3mEhARFUpUo9IUWvKlLJrW6x6Cuy6SNCMsKB4LsyVHQQ2jV1oaet2fB5P1jfYt11D6Ek3/tizxHqe8Bg=="/>
         </item>
     </channel>
 </rss>

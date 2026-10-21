@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build, sign with Astraea's self-signed identity, package, and sign an
+# Build, sign with Developer ID, notarize, staple, package, and sign an
 # appcast for one Astraea release.
 #
-# Produces three artifacts in dist/ and uploads NOTHING:
+# Produces three artifacts in dist/ and publishes NOTHING:
 #
 #   Astraea-<version>.dmg   first-time installs, with an /Applications symlink
 #   Astraea-<version>.zip   Sparkle updates
@@ -13,9 +13,11 @@
 # user did not install would fail Sparkle's validation later.
 #
 # The DMG still matters even with Sparkle wired: Sparkle only updates an app
-# somebody already has. First installs come through the DMG and still hit
-# Gatekeeper, which is why README documents the Open Anyway flow.
+# somebody already has. First installs come through the DMG and pass
+# Gatekeeper because both it and the app inside are notarized and stapled.
 #
+# Uploads go only to Apple's notary service (notarytool, keychain profile
+# $NOTARY_PROFILE, default AC_PASSWORD).
 # Publishing is a deliberate, separate act: upload both packages to a GitHub
 # Release tagged v<version>, then commit appcast.xml to the repo root on main,
 # which is where SUFeedURL points.
@@ -24,9 +26,9 @@
 #        scripts/release.sh 1.1 --sign-only
 #
 # --sign-only stops after build, sign, verify and the launch smoke test. It
-# writes nothing to dist/, never touches the EdDSA key or appcast.xml, and does
-# not need generate_appcast. Use it to check a signing change without cutting a
-# release.
+# writes nothing to dist/, never notarizes, never touches the EdDSA key or
+# appcast.xml, and does not need generate_appcast or notary credentials. Use it
+# to check a signing change without cutting a release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -64,62 +66,73 @@ STAGING="$DIST/staging"
 ENTITLEMENTS="Astraea/Astraea.entitlements"
 
 # --- signing identity --------------------------------------------------------
-# Releases are signed with a self-signed certificate, "PopNotch Self-Signed
-# (Techie)", kept in the login keychain (decided 2026-10-15, PROJECT-CONTEXT.md,
-# Distribution). Up to 1.3.1 they were ad-hoc, and an ad-hoc designated
-# requirement is a bare cdhash: every build looked like a different app, so the
-# Accessibility grant and the Face Unlock keychain item's ACL reset on every
-# update. A certificate gives the stable requirement
-#     identifier "com.techie.Astraea" and certificate leaf = H"<sha1>"
-# which every build signed with this one cert satisfies.
+# Releases are signed with the Developer ID Application certificate for team
+# 4KUMGQ48T9 and notarized (decided 2026-10-21, PROJECT-CONTEXT.md,
+# Distribution). History: ad-hoc up to 1.3.1, whose designated requirement is a
+# bare cdhash, so every update reset the Accessibility grant and the Face
+# Unlock keychain ACL; then a self-signed cert, which gave a stable requirement
+# but no Team ID and no Gatekeeper approval. Developer ID gives all three.
 #
-# Selected by SHA-1, looked up by exact Common Name. NO -v on find-identity:
-# the cert is deliberately untrusted (codesign signs with it without any trust
-# settings), and -v hides untrusted identities.
+# The designated requirement is pinned to the TEAM, not to one certificate:
+#     identifier "com.techie.Astraea" and anchor apple generic and ...
+#     certificate leaf[subject.OU] = "4KUMGQ48T9"
+# so a renewed Developer ID cert (they last five years) keeps every user's
+# grants. That is why there is no SHA-1 pin here any more; the DR check below
+# is the guard that matters.
 #
-# There is NO fallback. Never ad-hoc, which is the identity churn this replaces.
-# Never the Apple Development certificate, a personal credential that must not
-# sign a shipped build.
+# Looked up by exact Common Name, WITH -v: an Apple-issued cert must be
+# trusted, and -v drops an expired one left behind after a renewal.
 #
-# EXPECTED_SIGN_SHA1 pins the cert. A different hash under the same name means
-# the cert was regenerated, and shipping that changes the designated
-# requirement for every installed copy, which costs every user their grants
-# again. If the cert really was lost and replaced, update the constant on
-# purpose and record it in PROJECT-CONTEXT.md.
-SIGN_NAME="PopNotch Self-Signed (Techie)"
-EXPECTED_SIGN_SHA1="DD0484A62A4558E96D7D80B89941A24B31F13C65"
+# There is NO fallback. Never ad-hoc, never the self-signed cert, never the
+# Apple Development certificate, a personal credential that must not sign a
+# shipped build.
+TEAM_ID="4KUMGQ48T9"
+SIGN_NAME="Developer ID Application: Joshua Pham ($TEAM_ID)"
 echo "==> Locating signing identity"
-SIGN_SHA1S=$(security find-identity -p codesigning 2>/dev/null \
+SIGN_SHA1S=$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -v want="\"$SIGN_NAME\"" \
         'index($0, want) && length($2) == 40 && $2 ~ /^[0-9A-F]+$/ { print $2 }' \
     | sort -u)
 SIGN_COUNT=$(grep -c . <<<"$SIGN_SHA1S" || true)
 if [[ "$SIGN_COUNT" -eq 0 ]]; then
     cat >&2 <<MSG
-!! No code-signing identity named "$SIGN_NAME" in the keychain.
+!! No valid code-signing identity named "$SIGN_NAME" in the keychain.
 
    Releases must be signed with it, and this script will not fall back to
-   ad-hoc or to any other certificate. Restore it by importing the backup
-   .p12 exported from Keychain Access (double-click it, login keychain), then
-   re-run. Check with:  security find-identity -p codesigning
+   ad-hoc or to any other certificate. Download it from
+   developer.apple.com > Certificates (or Xcode > Settings > Accounts >
+   Manage Certificates), then re-run. Check with:
+       security find-identity -v -p codesigning
 MSG
     exit 1
 fi
 if [[ "$SIGN_COUNT" -ne 1 ]]; then
-    echo "!! More than one identity named \"$SIGN_NAME\":" >&2
+    echo "!! More than one valid identity named \"$SIGN_NAME\":" >&2
     sed 's/^/   /' <<<"$SIGN_SHA1S" >&2
     echo "   Delete the stray one in Keychain Access; the cert must be unambiguous." >&2
     exit 1
 fi
 SIGN_SHA1="$SIGN_SHA1S"
-if [[ "$SIGN_SHA1" != "$EXPECTED_SIGN_SHA1" ]]; then
-    echo "!! \"$SIGN_NAME\" is $SIGN_SHA1, expected $EXPECTED_SIGN_SHA1." >&2
-    echo "   This is a different certificate. Shipping it would change Astraea's" >&2
-    echo "   designated requirement and reset every user's grants. See the" >&2
-    echo "   EXPECTED_SIGN_SHA1 comment in this script." >&2
+echo "    $SIGN_NAME ($SIGN_SHA1)"
+
+# --- notary credentials --------------------------------------------------------
+# Stored once with
+#     xcrun notarytool store-credentials "AC_PASSWORD" \
+#         --apple-id <apple id> --team-id 4KUMGQ48T9
+# in a real terminal (the password prompt needs a TTY). Checked up front so a
+# missing profile fails in seconds rather than after the build.
+# --sign-only never notarizes, so it does not need the profile.
+NOTARY_PROFILE="${NOTARY_PROFILE:-AC_PASSWORD}"
+if [[ "$SIGN_ONLY" -eq 0 ]]; then
+echo "==> Checking notary credentials"
+if ! NOTARY_CHECK=$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1); then
+    echo "!! notarytool cannot use keychain profile \"$NOTARY_PROFILE\":" >&2
+    sed 's/^/   /' <<<"$NOTARY_CHECK" >&2
+    echo "   Store it with the store-credentials command in this script's comments." >&2
     exit 1
 fi
-echo "    $SIGN_NAME ($SIGN_SHA1)"
+echo "    keychain profile \"$NOTARY_PROFILE\" OK"
+fi
 
 # --- generate_appcast, located dynamically -----------------------------------
 # It ships inside the resolved SPM artifact, whose path contains a DerivedData
@@ -225,37 +238,17 @@ echo "    $APP"
 # -1743, no prompt and no Automation pane entry.
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 
-# Release-only entitlement, derived here rather than added to the checked-in
-# file so Debug builds stay unweakened.
+# No disable-library-validation. Up to 1.3.2 the release build needed it:
+# Library Validation demands every loaded library share the main executable's
+# Team ID, and neither ad-hoc nor the self-signed cert had one, so dyld refused
+# Sparkle.framework ("different Team IDs", the 1.0.0 launch failure). Signing
+# app and frameworks with the one Developer ID gives them all team 4KUMGQ48T9,
+# so library validation passes on its own. The team ID check and the launch
+# smoke test below prove it on every release.
 #
-# WHY IT IS REQUIRED: Hardened Runtime turns on Library Validation, which
-# demands that every loaded library share the main executable's Team ID.
-# Only Apple-issued certificates carry a Team ID. Ad-hoc signatures have none,
-# and neither does the self-signed release certificate (TeamIdentifier=not
-# set), so the app cannot load its own Sparkle.framework and dyld refuses with
-# "mapping process and mapped file (non-platform) have different Team IDs" —
-# the 1.0.0 launch failure. Signing inside-out with one identity does not fix
-# it, because the problem is the absence of a team, not a mismatch between two.
-# Re-tested with the self-signed cert on 2026-10-15: without this entitlement
-# the app aborts at launch with exactly that dyld error.
-#
-# Disabling library validation is the narrow fix: it drops that one check and
-# keeps the rest of Hardened Runtime (DYLD injection blocking, unsigned
-# executable memory). Dropping `-o runtime` instead would fix the launch too,
-# but forfeits all of those.
-#
-# REMOVE THIS when a Developer ID exists: signing app and framework with the
-# same Apple-issued identity gives them a matching Team ID, library validation
-# passes on its own, and this entitlement becomes an unnecessary weakening.
-RELEASE_ENTITLEMENTS=$(mktemp -t popnotch-release-entitlements)
-cp "$ENTITLEMENTS" "$RELEASE_ENTITLEMENTS"
-/usr/libexec/PlistBuddy -c \
-    "Add :com.apple.security.cs.disable-library-validation bool true" \
-    "$RELEASE_ENTITLEMENTS" >/dev/null
-
-# --timestamp=none: Apple's timestamp server only stamps signatures made with
-# Apple-issued certificates. Without a secure timestamp, the signature is
-# valid for as long as the certificate is, which for this one is until 2046.
+# --timestamp: a secure timestamp from Apple's server is mandatory for
+# notarization, and keeps the signature valid after the certificate expires.
+# It needs the network.
 echo "==> Signing with $SIGN_NAME"
 for COMPONENT in \
     "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
@@ -264,11 +257,11 @@ for COMPONENT in \
     "$FRAMEWORK/Versions/B/Autoupdate"
 do
     [[ -e "$COMPONENT" ]] || { echo "!! Missing $COMPONENT" >&2; exit 1; }
-    codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none \
+    codesign -f -s "$SIGN_SHA1" -o runtime --timestamp \
         --preserve-metadata=entitlements "$COMPONENT"
     echo "    signed $(basename "$COMPONENT")"
 done
-codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$FRAMEWORK"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp "$FRAMEWORK"
 echo "    signed Sparkle.framework"
 
 # --- vendored mediaremote-adapter --------------------------------------------
@@ -320,14 +313,13 @@ then
 fi
 echo "    rewrote MediaRemoteAdapter install name"
 
-codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$ADAPTER_FRAMEWORK"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp "$ADAPTER_FRAMEWORK"
 echo "    signed MediaRemoteAdapter.framework"
-codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none "$ADAPTER_TEST_CLIENT"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp "$ADAPTER_TEST_CLIENT"
 echo "    signed MediaRemoteAdapterTestClient"
 
-codesign -f -s "$SIGN_SHA1" -o runtime --timestamp=none \
-    --entitlements "$RELEASE_ENTITLEMENTS" "$APP"
-rm -f "$RELEASE_ENTITLEMENTS"
+codesign -f -s "$SIGN_SHA1" -o runtime --timestamp \
+    --entitlements "$ENTITLEMENTS" "$APP"
 echo "    signed Astraea.app"
 
 # --- verify ------------------------------------------------------------------
@@ -357,7 +349,17 @@ do
         exit 1
     fi
 done
-echo "    team IDs agree (app, Sparkle, MediaRemoteAdapter: ${APP_TEAM:-not set})"
+if [[ "$APP_TEAM" != "$TEAM_ID" ]]; then
+    echo "!! App Team ID is '${APP_TEAM:-not set}', expected $TEAM_ID. Refusing to package." >&2
+    exit 1
+fi
+echo "    team IDs agree (app, Sparkle, MediaRemoteAdapter: $APP_TEAM)"
+
+if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "disable-library-validation"; then
+    echo "!! disable-library-validation is back in the app's entitlements." >&2
+    echo "   With a Developer ID it is an unneeded weakening. Refusing to package." >&2
+    exit 1
+fi
 
 if ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "apple-events"; then
     echo "!! The apple-events entitlement is missing after signing." >&2
@@ -367,11 +369,11 @@ fi
 echo "    apple-events entitlement present"
 
 # The point of the release identity: a designated requirement pinned to the
-# certificate, not to this build's cdhash. A cdhash here means the bundle is
-# ad-hoc again, and every user would lose their grants on this update.
+# team, not to this build's cdhash or to one certificate. Anything else here
+# means the identity changed, and every user would lose their grants on this
+# update. This is codesign's standard Developer ID requirement, verbatim.
 BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
-SIGN_SHA1_LOWER=$(tr '[:upper:]' '[:lower:]' <<<"$SIGN_SHA1")
-EXPECTED_DR="identifier \"$BUNDLE_ID\" and certificate leaf = H\"$SIGN_SHA1_LOWER\""
+EXPECTED_DR="identifier \"$BUNDLE_ID\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = \"$TEAM_ID\""
 ACTUAL_DR=$(codesign -d -r- "$APP" 2>/dev/null | sed -n 's/^designated => //p')
 if [[ "$ACTUAL_DR" != "$EXPECTED_DR" ]]; then
     echo "!! Unexpected designated requirement." >&2
@@ -382,15 +384,25 @@ if [[ "$ACTUAL_DR" != "$EXPECTED_DR" ]]; then
 fi
 echo "    designated => $ACTUAL_DR"
 
-# Every Mach-O in the bundle must carry the release identity. The signing
+# Every Mach-O in the bundle must carry the release identity and a secure
+# timestamp, or the notary service rejects the whole submission. The signing
 # above walks a fixed list; code embedded later and missed there would ship
 # with Xcode's ad-hoc signature, which --verify --deep accepts silently.
+#
+# codesign -dvv prints the whole chain, leaf first, so only line one is the
+# signer. Taken with `sed -n 1p`, never `head`, which exits early and turns
+# SIGPIPE into a failure under pipefail. A secure timestamp prints as
+# "Timestamp="; "Signed Time=" is the unauthenticated local clock.
 UNSIGNED=0
 while IFS= read -r -d '' FILE; do
     file -b "$FILE" | grep -q '^Mach-O' || continue
-    AUTHORITY=$(codesign -dvv "$FILE" 2>&1 | sed -n 's/^Authority=//p')
+    DETAILS=$(codesign -dvv "$FILE" 2>&1 || true)
+    AUTHORITY=$(sed -n 's/^Authority=//p' <<<"$DETAILS" | sed -n 1p)
     if [[ "$AUTHORITY" != "$SIGN_NAME" ]]; then
         echo "!! ${FILE#"$APP"/} is not signed by $SIGN_NAME (Authority: ${AUTHORITY:-none, so ad-hoc or unsigned})" >&2
+        UNSIGNED=1
+    elif ! grep -q '^Timestamp=' <<<"$DETAILS"; then
+        echo "!! ${FILE#"$APP"/} has no secure timestamp; notarization would reject it" >&2
         UNSIGNED=1
     fi
 done < <(find "$APP" -type f -print0)
@@ -398,7 +410,7 @@ if [[ "$UNSIGNED" -ne 0 ]]; then
     echo "   Add it to the inside-out signing above. Refusing to package." >&2
     exit 1
 fi
-echo "    every Mach-O in the bundle signed by $SIGN_NAME"
+echo "    every Mach-O in the bundle signed by $SIGN_NAME, with a secure timestamp"
 
 # Coverage instrumentation must not ship. CLANG_COVERAGE_MAPPING=NO on the
 # build line is the fix; this is the proof, read from the binary rather than
@@ -448,9 +460,69 @@ smoke_launch "$APP" "build products"
 if [[ "$SIGN_ONLY" -eq 1 ]]; then
     echo
     echo "--sign-only: built, signed and verified $APP"
-    echo "Nothing packaged; dist/ and appcast.xml untouched."
+    echo "Nothing packaged or notarized; dist/ and appcast.xml untouched."
     exit 0
 fi
+
+# --- notarize ------------------------------------------------------------------
+# Submits to Apple's notary service and waits (usually a few minutes). The
+# exit status of `notarytool submit --wait` is not a verdict: an Invalid
+# submission still exits 0. The status is read out of the plist instead, and on
+# anything but Accepted the notary log, which names each offending file, is
+# printed.
+notarize() {
+    local file="$1" label="$2" out id status
+    echo "    submitting $label (waits for Apple)"
+    if ! out=$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" \
+        --wait --output-format plist 2>&1); then
+        echo "!! notarytool submit failed for $label:" >&2
+        sed 's/^/   /' <<<"$out" >&2
+        exit 1
+    fi
+    id=$(plutil -extract id raw -o - - <<<"$out" 2>/dev/null || true)
+    status=$(plutil -extract status raw -o - - <<<"$out" 2>/dev/null || true)
+    if [[ "$status" != "Accepted" ]]; then
+        echo "!! Notarization of $label: ${status:-no status} (submission ${id:-unknown})" >&2
+        sed 's/^/   /' <<<"$out" >&2
+        if [[ -n "$id" ]]; then
+            echo "   Notary log:" >&2
+            xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" 2>&1 \
+                | sed 's/^/   /' >&2 || true
+        fi
+        exit 1
+    fi
+    echo "    accepted: $label (submission $id)"
+}
+
+# The app is notarized and stapled BEFORE packaging, so the zip and the DMG
+# both carry the ticket and Gatekeeper approves the first launch offline. The
+# upload is a throwaway zip; the shipped zip is cut from the stapled app below.
+echo "==> Notarizing"
+NOTARIZE_DIR=$(mktemp -d)
+ditto -c -k --keepParent "$APP" "$NOTARIZE_DIR/Astraea.zip"
+notarize "$NOTARIZE_DIR/Astraea.zip" "Astraea.app"
+rm -rf "$NOTARIZE_DIR"
+
+xcrun stapler staple -q "$APP"
+if ! xcrun stapler validate -q "$APP"; then
+    echo "!! Stapled ticket on Astraea.app does not validate. Refusing to package." >&2
+    exit 1
+fi
+echo "    ticket stapled to Astraea.app"
+
+# Gatekeeper's own verdict, the check a user's Mac actually runs.
+# "source=Notarized Developer ID" is the only acceptable answer.
+gatekeeper_check() {
+    local app="$1" label="$2" out
+    out=$(spctl -a -vv -t exec "$app" 2>&1 || true)
+    if ! grep -q "source=Notarized Developer ID" <<<"$out"; then
+        echo "!! Gatekeeper does not accept $label:" >&2
+        sed 's/^/   /' <<<"$out" >&2
+        exit 1
+    fi
+    echo "    Gatekeeper accepts $label (Notarized Developer ID)"
+}
+gatekeeper_check "$APP" "build products"
 
 # --- package -----------------------------------------------------------------
 # ditto, not zip: a plain zip does not preserve the extended attributes and
@@ -471,21 +543,19 @@ ln -s /Applications "$STAGING/Applications"
 hdiutil create -volname "Astraea $VERSION" -srcfolder "$STAGING" \
     -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGING"
-echo "    $DMG ($(stat -f%z "$DMG") bytes)"
 
-# TODO(notarization): enable once there is a Developer ID ($99/y account).
-# Revisit trigger is recorded in PROJECT-CONTEXT.md's open questions.
-# Note this replaces the self-signed identity above rather than adding to it,
-# and must happen BEFORE packaging so both artifacts carry the stapled ticket.
-# Switching changes the designated requirement once more, so users re-grant
-# Accessibility and Face Unlock's keychain access one last time.
-#
-# codesign --force --sign "Developer ID Application: TEAM" \
-#     --options runtime --timestamp "$APP"
-# ditto -c -k --keepParent "$APP" "$DIST/notarize.zip"
-# xcrun notarytool submit "$DIST/notarize.zip" \
-#     --keychain-profile "popnotch-notary" --wait
-# xcrun stapler staple "$APP"
+# The DMG is a container a browser quarantines, so it gets its own signature,
+# notarization and ticket. The app inside is already stapled; this makes the
+# disk image itself open without a Gatekeeper prompt. No `-o runtime`: that is
+# for executables, not disk images.
+codesign -f -s "$SIGN_SHA1" --timestamp "$DMG"
+notarize "$DMG" "$(basename "$DMG")"
+xcrun stapler staple -q "$DMG"
+if ! xcrun stapler validate -q "$DMG"; then
+    echo "!! Stapled ticket on $DMG does not validate. Refusing to publish." >&2
+    exit 1
+fi
+echo "    $DMG ($(stat -f%z "$DMG") bytes, signed, notarized, stapled)"
 
 # Prove the signature survived each round trip, rather than assuming it. A
 # signature that breaks in packaging is invisible until a user's machine
@@ -521,6 +591,7 @@ if ! codesign --verify --deep --strict "$VERIFY_DIR/Astraea.app" 2>&1 | sed 's/^
     exit 1
 fi
 echo "    signature intact after unzip"
+gatekeeper_check "$VERIFY_DIR/Astraea.app" "unzipped"
 smoke_launch "$VERIFY_DIR/Astraea.app" "unzipped"
 
 hdiutil attach "$DMG" -nobrowse -quiet -mountpoint "$MOUNT_DIR"
@@ -529,6 +600,7 @@ if ! codesign --verify --deep --strict "$MOUNT_DIR/Astraea.app" 2>&1 | sed 's/^/
     exit 1
 fi
 echo "    signature intact inside DMG"
+gatekeeper_check "$MOUNT_DIR/Astraea.app" "inside DMG"
 smoke_launch "$MOUNT_DIR/Astraea.app" "inside DMG"
 detach_dmg "$MOUNT_DIR"
 

@@ -81,27 +81,18 @@ It runs on any Apple Silicon Mac. A display without a notch gets a small fallbac
 
 Download the latest `Astraea-<version>.dmg` from [**Releases**](https://github.com/Yuwa709/Astraea/releases/latest).
 
-Astraea is not notarized, so macOS blocks the first launch until you approve it:
-
 1. Open the DMG and drag **Astraea** to **Applications**.
-2. Double-click Astraea. macOS blocks it.
-3. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Astraea notice.
-4. Authenticate, then click **Open**. macOS only asks once.
+2. Double-click Astraea. macOS asks once to confirm you want to open an app downloaded from the internet. Click **Open**.
+
+Astraea is signed with a Developer ID and notarized by Apple, so Gatekeeper lets it run without a trip to System Settings.
 
 > [!NOTE]
-> Astraea has no Dock icon and no window, so a blocked launch looks like nothing happened. It isn't broken. It's waiting for step 3.
-
-This is only needed on first install. Updates through **Settings → About → Check for Updates** don't repeat it.
+> Astraea has no Dock icon and no window. It lives in the menu bar and around the notch, so a successful launch can look like nothing happened. Hover the notch.
 
 <details>
-<summary><b>Troubleshooting</b></summary>
+<summary><b>Upgrading from 1.3.2 or earlier</b></summary>
 
-- **No Open Anyway button?** It only appears after a launch attempt, and only for a while. Double-click Astraea again, then reopen Privacy & Security.
-- **"Astraea is damaged" with no Open Anyway button?** On macOS 26 some unnotarized apps get this message instead. For that case only, run:
-
-  ```bash
-  xattr -cr /Applications/Astraea.app
-  ```
+Those releases were not notarized and used a different signature. The first notarized update looks like a new app to macOS, so it asks once more for **Accessibility** and for Face Unlock's keychain access. After that, updates keep your permissions.
 
 </details>
 
@@ -144,7 +135,6 @@ The source is public so you can check.
 - **Spotify artwork needs the Automation permission.** Spotify broadcasts track details without it, but artwork is fetched over AppleScript.
 - **Other players get fewer controls.** Players reached through macOS's now-playing session have no Up Next and no like button.
 - **Lyrics coverage is whatever LRCLIB has.** Instrumentals and obscure tracks may show none. Untimed, plain-text lyrics are skipped because the notch can't scroll them.
-- **Not notarized.** See [Install](#install).
 - **Face Unlock is not Face ID.** It matches a flat camera image; the liveness check stops screens and phone edges, not every photo. It needs the built-in camera, so it is off with the lid closed, and it does nothing at the FileVault or login screen.
 - **External displays** get a plain fallback strip, not the full experience.
 
@@ -163,7 +153,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.3.2**](https://github.com/Yuwa709/Astraea/releases/tag/v1.3.2) <br><sub>Latest</sub> | Oct 15, 2026 | **Permissions that survive updates.** Astraea is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
+| [**1.4.0**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.0) <br><sub>Latest</sub> | Oct 21, 2026 | **PopNotch is now Astraea, and it's notarized.** Signed with an Apple Developer ID and notarized, so a first install opens without a trip to Privacy & Security. Settings carry over from PopNotch. Re-grant Accessibility and Face Unlock's keychain access once after updating; that identity is permanent. |
+| **1.3.2** | Oct 15, 2026 | **Permissions that survive updates.** Astraea is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
 | **1.3.1** | Oct 15, 2026 | **Update notices in the notch.** Astraea now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |
 | **1.3.0** | Oct 15, 2026 | **Face Unlock**: unlock your Mac at the lock screen with your face, using the built-in camera. Face data is encrypted and never leaves your Mac. Off by default. |
 | **1.2.3** | Oct 14, 2026 | A reliability release from a full review. The overlay stays on the notch when an external display is the main display, and the mixer holds an app's volume through device and sample-rate changes. Clipboard memory is capped, and **Launch at Login** shows when macOS needs your approval. |
