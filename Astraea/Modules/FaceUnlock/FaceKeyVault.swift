@@ -52,7 +52,7 @@ nonisolated enum FaceKeyVaultError: LocalizedError {
             let message = (SecCopyErrorMessageString(status, nil) as String?) ?? "unknown error"
             return "The keychain refused access to the face data key: \(message) (\(status))."
         case .existingKeyNotRemovable(let reason):
-            return "An earlier Face Unlock key in your keychain could not be removed, so nothing was saved (\(reason)). Delete \u{201C}PopNotch Face Unlock\u{201D} in Keychain Access, then try again."
+            return "An earlier Face Unlock key in your keychain could not be removed, so nothing was saved (\(reason)). Delete \u{201C}\(LoginKeychainKeyVault.label)\u{201D} (or \u{201C}\(LoginKeychainKeyVault.legacyLabel)\u{201D}, from before the rename) in Keychain Access, then try again."
         }
     }
 }
@@ -93,9 +93,10 @@ nonisolated struct FaceKeyEpochs: Codable, Equatable, Sendable {
 
 /// A generic-password item in the login keychain.
 ///
-/// After an update, an ad-hoc-signed build has a new signature, so macOS
-/// asks once whether this build may read the previous one's item
-/// (`PROJECT-CONTEXT.md`, on why the Keychain was dropped in 2026-09).
+/// When the signing identity changes (ad-hoc, then self-signed, then
+/// Developer ID from 1.4.0), macOS asks once whether this build may read the
+/// previous one's item (`PROJECT-CONTEXT.md`, Distribution). Developer ID
+/// builds share one team-pinned identity, so later updates do not ask.
 /// That prompt is expected from `readKey`: reads only happen from the
 /// Settings window, or at launch to restore a session left unlocked, and
 /// only while the screen is unlocked, where the user can answer it. Every
@@ -103,6 +104,13 @@ nonisolated struct FaceKeyEpochs: Codable, Equatable, Sendable {
 nonisolated struct LoginKeychainKeyVault: FaceKeyVault {
     static let service = "com.techie.PopNotch.FaceUnlock"
     static let account = "faceDataKey"
+    /// Display name only, shown in the keychain prompt and Keychain Access.
+    /// Lookups go by service and account, which keep their PopNotch names so
+    /// existing items still match; items created before the rename keep
+    /// `legacyLabel`, since relabelling one is an attribute write that could
+    /// prompt again.
+    static let label = "Astraea Face Unlock"
+    static let legacyLabel = "PopNotch Face Unlock"
 
     private var itemQuery: [String: Any] {
         [
@@ -138,7 +146,7 @@ nonisolated struct LoginKeychainKeyVault: FaceKeyVault {
     func createKey() throws -> SymmetricKey {
         let key = SymmetricKey(size: .bits256)
         var item = itemQuery
-        item[kSecAttrLabel as String] = "PopNotch Face Unlock"
+        item[kSecAttrLabel as String] = Self.label
         item[kSecValueData as String] = key.withUnsafeBytes { Data($0) }
         item[kSecAttrGeneric as String] = try FaceKeyEpochs().encoded()
         let status = SecItemAdd(item as CFDictionary, nil)

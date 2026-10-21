@@ -30,7 +30,13 @@ nonisolated enum FaceModelIntegrity {
     ///     xcodebuild -scheme Astraea -configuration Debug -destination 'platform=macOS' build
     ///     cd <DerivedData>/Build/Products/Debug/Astraea.app/Contents/Resources/FaceReidentification.mlmodelc
     ///     shasum -a 256 ./model.mil ./weights/weight.bin | shasum -a 256
-    static let expectedDigest = "29eb658cda412f43775b761c2025f7269f52bffacafe2fb044cb35427c7e1c3f"
+    ///
+    /// Re-pinned 2026-10-21 for Xcode 27.1 (coremlc 3600.25.1). Weights are
+    /// byte-identical to the previous pin and `model.mil` differs only in its
+    /// line-2 `buildInfo` stamp. 1.4.0 shipped with the stale pin and refused
+    /// its own model; `scripts/release.sh` now checks the built bundle against
+    /// this value before signing.
+    static let expectedDigest = "ea5bc4e43a8667510337aea359f43f0207146e6e011b63b0d815e68dfe11d075"
 
     /// Hashed, in this order.
     static let hashedFiles = ["./model.mil", "./weights/weight.bin"]

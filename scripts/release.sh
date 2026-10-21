@@ -206,6 +206,22 @@ smoke_launch() {
 #
 # No `clean`: it is not needed for correctness and risks removing the SPM
 # artifacts that generate_appcast lives in.
+# The full test suite gates every release. 1.4.0 shipped with Face Unlock
+# unable to load its model while testBundledModelMatchesThePinnedDigest was
+# failing; running it here would have stopped that release.
+# --sign-only skips it: it checks signing, not the app.
+if [[ "$SIGN_ONLY" -eq 0 ]]; then
+echo "==> Running tests"
+TEST_LOG=$(mktemp)
+if ! xcodebuild -scheme Astraea -destination 'platform=macOS' test >"$TEST_LOG" 2>&1; then
+    grep -E "Test case .* failed|error:" "$TEST_LOG" | sed 's/^/   /' >&2 || true
+    echo "!! Tests failed (full log: $TEST_LOG). Refusing to release." >&2
+    exit 1
+fi
+rm -f "$TEST_LOG"
+echo "    all tests passed"
+fi
+
 echo "==> Building Release $VERSION"
 xcodebuild -scheme Astraea -configuration Release -destination 'platform=macOS' \
     MARKETING_VERSION="$VERSION" \
@@ -435,6 +451,29 @@ if [[ "$PRF_CNTS" -ne 0 || "$PROFC" -ne 0 ]]; then
 fi
 echo "    no coverage instrumentation (no __llvm_prf_cnts section, no ___profc_ symbols)"
 
+# The face model must pass the app's own integrity check, or Face Unlock
+# refuses to load it on every user's machine. 1.4.0 shipped exactly that: an
+# Xcode update changed the compiler's buildInfo stamp in model.mil, the digest
+# moved, and nothing here noticed. Recomputed the way FaceModelIntegrity does
+# (shasum lines for the hashed files, then a SHA-256 of those lines) and
+# compared against the value pinned in the source.
+MODEL_DIR="$APP/Contents/Resources/FaceReidentification.mlmodelc"
+INTEGRITY_SRC="Astraea/Modules/FaceUnlock/FaceModelIntegrity.swift"
+PINNED_DIGEST=$(sed -n 's/^ *static let expectedDigest = "\([0-9a-f]\{64\}\)"$/\1/p' "$INTEGRITY_SRC")
+if [[ -z "$PINNED_DIGEST" || ! -d "$MODEL_DIR" ]]; then
+    echo "!! Could not read the pinned face-model digest or find $MODEL_DIR. Refusing to package." >&2
+    exit 1
+fi
+BUILT_DIGEST=$(cd "$MODEL_DIR" && shasum -a 256 ./model.mil ./weights/weight.bin | shasum -a 256 | cut -c1-64)
+if [[ "$BUILT_DIGEST" != "$PINNED_DIGEST" ]]; then
+    echo "!! Face model digest $BUILT_DIGEST does not match the pin $PINNED_DIGEST" >&2
+    echo "   in $INTEGRITY_SRC. Face Unlock would refuse its model." >&2
+    echo "   If the model or Xcode changed on purpose, check that weight.bin is" >&2
+    echo "   unchanged and re-pin (see the expectedDigest comment). Refusing to package." >&2
+    exit 1
+fi
+echo "    face model digest matches the pin"
+
 BUILT_PLIST="$APP/Contents/Info.plist"
 BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$BUILT_PLIST")
 BUILT_SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$BUILT_PLIST")
@@ -540,9 +579,93 @@ echo "    $ZIP ($LENGTH bytes)"
 ditto "$APP" "$STAGING/Astraea.app"
 # The drag-to-install target users expect in a DMG window.
 ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "Astraea $VERSION" -srcfolder "$STAGING" \
-    -ov -format UDZO "$DMG" >/dev/null
+
+# --- styled DMG window ---------------------------------------------------------
+# The window a user sees on opening the DMG: a night-sky background drawn by
+# scripts/dmg-background.swift, the app icon on the left and Applications on
+# the right with an arrow between them, no toolbar, and Astraea's icon as the
+# volume icon. Finder stores that layout in the volume's .DS_Store, and the
+# only supported way to write it is to have Finder lay out a mounted
+# read-write image, hence the AppleScript. The positions here must match the
+# constants in dmg-background.swift.
+#
+# Needs Automation permission for whatever runs this script to control
+# Finder; macOS asks the first time.
+VOLNAME="Astraea $VERSION"
+if mount | grep -q " on /Volumes/$VOLNAME "; then
+    echo "!! A volume named \"$VOLNAME\" is already mounted. Eject it and re-run." >&2
+    exit 1
+fi
+mkdir "$STAGING/.background"
+BG_DIR=$(mktemp -d)
+swift scripts/dmg-background.swift "$BG_DIR"
+# One HiDPI TIFF, so Retina screens get the @2x art.
+tiffutil -cathidpicheck "$BG_DIR/background.png" "$BG_DIR/background@2x.png" \
+    -out "$STAGING/.background/background.tiff" >/dev/null 2>&1
+rm -rf "$BG_DIR"
+
+RW_DMG="$DIST/rw.dmg"
+hdiutil create -volname "$VOLNAME" -srcfolder "$STAGING" -fs HFS+ \
+    -ov -format UDRW "$RW_DMG" >/dev/null
 rm -rf "$STAGING"
+RW_MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen \
+    | awk -F'\t' '/\/Volumes\// { print $NF; exit }')
+if [[ "$RW_MOUNT" != "/Volumes/$VOLNAME" ]]; then
+    echo "!! Read-write image mounted at '${RW_MOUNT:-nowhere}', expected /Volumes/$VOLNAME." >&2
+    [[ -n "$RW_MOUNT" ]] && hdiutil detach "$RW_MOUNT" -force -quiet || true
+    exit 1
+fi
+
+# Bounds include the title bar, so 660x400 of content needs ~28 more points.
+if ! osascript <<APPLESCRIPT
+tell application "Finder"
+    tell disk "$VOLNAME"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {200, 120, 860, 548}
+        set viewOptions to the icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 128
+        set text size of viewOptions to 13
+        set background picture of viewOptions to file ".background:background.tiff"
+        set position of item "Astraea.app" of container window to {170, 190}
+        set position of item "Applications" of container window to {490, 190}
+        close
+        open
+        update without registering applications
+        delay 2
+        close
+    end tell
+end tell
+APPLESCRIPT
+then
+    hdiutil detach "$RW_MOUNT" -force -quiet || true
+    echo "!! Finder could not lay out the DMG window. If macOS denied Automation" >&2
+    echo "   access to Finder, allow it in System Settings > Privacy & Security >" >&2
+    echo "   Automation, then re-run." >&2
+    exit 1
+fi
+[[ -f "$RW_MOUNT/.DS_Store" ]] || { echo "!! Finder wrote no .DS_Store; the layout would be lost." >&2; exit 1; }
+# The volume icon goes on last: hdiutil create -srcfolder leaves
+# .VolumeIcon.icns out, and Finder deletes it during the layout above
+# (seen on macOS 27, 2026-10-21).
+cp "$APP/Contents/Resources/AppIcon.icns" "$RW_MOUNT/.VolumeIcon.icns"
+SetFile -a C "$RW_MOUNT"
+sync
+detach_rw() {
+    local i
+    for i in 1 2 3 4 5; do
+        hdiutil detach "$RW_MOUNT" -quiet 2>/dev/null && return 0
+        sleep 1
+    done
+    hdiutil detach "$RW_MOUNT" -force -quiet
+}
+detach_rw
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG" >/dev/null
+rm -f "$RW_DMG"
+echo "    styled DMG window laid out"
 
 # The DMG is a container a browser quarantines, so it gets its own signature,
 # notarization and ticket. The app inside is already stapled; this makes the
