@@ -269,12 +269,12 @@ final class FaceUnlockCoordinatorTests: XCTestCase {
         XCTAssertEqual(typer.calls, 0)
     }
 
-    func testLockingAloneDoesNotScan() async {
+    func testLockingWithTheDisplayOnScans() async {
         let coordinator = await makeCoordinator()
         lockGuard.state = .locked
         events.send(.screenLocked)
         await settle(coordinator)
-        XCTAssertEqual(camera.startCount, 0)
+        XCTAssertEqual(camera.startCount, 1, "entering the lock screen scans without a wake")
         XCTAssertTrue(coordinator.lockSessionActive)
         await unlock(coordinator)
         XCTAssertFalse(coordinator.lockSessionActive)
@@ -776,6 +776,9 @@ final class FaceUnlockCoordinatorTests: XCTestCase {
         events.send(.screenUnlocked)
         let ended = await waitUntil { !coordinator.lockSessionActive }
         XCTAssertTrue(ended)
+        // The display is off, so the new lock session's scan stays pending
+        // and the only typing in this test is the first session's.
+        lockGuard.displayAsleep = true
         lockGuard.state = .locked
         events.send(.screenLocked)
         let relocked = await waitUntil { coordinator.lockSessionActive }

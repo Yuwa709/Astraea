@@ -6,8 +6,8 @@ import CoreGraphics
 import Observation
 import os
 
-/// Face Unlock at the lock screen: when the Mac wakes there, look for an
-/// enrolled face for up to 2 minutes, and on a match while the password
+/// Face Unlock at the lock screen: when the screen locks with the display
+/// on, or the Mac wakes at the lock screen, look for an enrolled face for up to 2 minutes, and on a match while the password
 /// field is up, type the stored password and Return.
 ///
 /// The coordinator draws nothing itself: its status shows in Settings, and
@@ -153,6 +153,8 @@ final class FaceUnlockCoordinator {
     /// waiting. Kept through an unknown lock state or a display still
     /// asleep, for `pendingWakeLifetime`.
     @ObservationIgnored private var pendingWakeAt: TimeInterval?
+    /// What armed `pendingWakeAt`, for the log: "wake" or "lock".
+    @ObservationIgnored private var pendingTrigger = "wake"
     @ObservationIgnored private var lastWakeAt: TimeInterval?
     @ObservationIgnored private var lastSessionState: FaceUnlockSession.State
     @ObservationIgnored private var lastSaveCount: Int
@@ -333,9 +335,18 @@ final class FaceUnlockCoordinator {
             }
             lastWakeAt = now
             pendingWakeAt = now
+            pendingTrigger = "wake"
             scheduleEvaluation()
         case .screenLocked:
             loginPrompt.screenDidLock()
+            // Entering the lock screen scans too, not only waking at it
+            // (decided 2026-10-21): someone still at the Mac is unlocked
+            // again at once. A lock on the way to sleep is cancelled by the
+            // sleep event, and a dark display keeps the scan pending.
+            if !isSleeping {
+                pendingWakeAt = environment.clock.now()
+                pendingTrigger = "lock"
+            }
             scheduleEvaluation()
         case .screenUnlocked:
             scheduleEvaluation()
@@ -392,7 +403,7 @@ final class FaceUnlockCoordinator {
             return refreshStatus()
         }
         pendingWakeAt = nil
-        startScanIfAllowed(trigger: "wake", wakeAt: wakeAt)
+        startScanIfAllowed(trigger: pendingTrigger, wakeAt: wakeAt)
     }
 
     /// Only on a positive `.unlocked`: the one place a lock session ends.
