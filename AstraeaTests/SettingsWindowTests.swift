@@ -73,10 +73,10 @@ final class SettingsWindowTests: XCTestCase {
         NotificationCenter.default.post(name: .astraeaOpenSettings, object: nil)
         RunLoop.current.run(until: Date().addingTimeInterval(1.0))
         let window = settingsWindows().first
-        // contentMinSize, not minSize — the latter includes the titlebar and
-        // measured 520 for a 500pt content floor.
+        // Width only: it is what keeps the sidebar from collapsing. The height
+        // is the OS's to adjust (it measured 500 on older macOS and 552 on
+        // macOS 27, where the safe-area band grew), so it is not pinned.
         XCTAssertEqual(window?.contentMinSize.width ?? 0, 715, accuracy: 0.5)
-        XCTAssertEqual(window?.contentMinSize.height ?? 0, 500, accuracy: 0.5)
     }
 
     /// Order is the spec: General, Modules, Music, Face Unlock, Permissions,

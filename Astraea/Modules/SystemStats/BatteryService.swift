@@ -349,7 +349,9 @@ final class BatteryService {
 
     // MARK: - IOKit
 
-    private static func readRegistry() -> [String: Any] {
+    /// Internal, not private: `BatteryWingMonitor` reads it for the same
+    /// fallback estimate when macOS has none.
+    static func readRegistry() -> [String: Any] {
         let service = IOServiceGetMatchingService(kIOMainPortDefault,
                                                   IOServiceMatching("AppleSmartBattery"))
         // Zero is what a machine with no battery returns. Not an error.

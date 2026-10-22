@@ -47,6 +47,7 @@ Astraea is a native Swift and SwiftUI app. It has no web runtime and no Electron
 
 - CPU, memory, disk, GPU and battery.
 - A battery page that answers *how long*: time until full, time until empty, and what your Mac is drawing right now.
+- **Battery in the notch** when nothing is playing: a small battery beside the camera, green on the charger, with time until full or empty on the other side.
 
 ### 📋 Clipboard and File Shelf *(optional)*
 
@@ -153,7 +154,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.4.1**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.1) <br><sub>Latest</sub> | Oct 21, 2026 | **Face Unlock works again**: 1.4.0 refused its own face model after an Xcode update changed the model's build stamp. A new night-sky install window, and the keychain item is now called "Astraea Face Unlock" for new setups. |
+| [**1.4.2**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.2) <br><sub>Latest</sub> | Oct 21, 2026 | **Battery in the notch.** When nothing is playing, the notch shows a small battery on the right (green on the charger) and the time until full or empty on the left. It switches the moment you plug in or unplug, and updates only when the battery reports a change. Turn it off with **System Stats** in Modules. Face Unlock now also scans when the screen locks, not only when it wakes. |
+| [**1.4.1**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.1) | Oct 21, 2026 | **Face Unlock works again**: 1.4.0 refused its own face model after an Xcode update changed the model's build stamp. A new night-sky install window, and the keychain item is now called "Astraea Face Unlock" for new setups. |
 | **1.4.0** | Oct 21, 2026 | **PopNotch is now Astraea, and it's notarized.** Signed with an Apple Developer ID and notarized, so a first install opens without a trip to Privacy & Security. Settings carry over from PopNotch. Re-grant Accessibility and Face Unlock's keychain access once after updating; that identity is permanent. |
 | **1.3.2** | Oct 15, 2026 | **Permissions that survive updates.** Astraea is now signed with a stable identity, so Accessibility and Face Unlock's keychain access stay granted across updates (re-grant them once after installing 1.3.2). A **Grant Access** button for the camera in Face Unlock's settings. |
 | **1.3.1** | Oct 15, 2026 | **Update notices in the notch.** Astraea now checks for updates once a day and shows a new version in the notch: a badge beside the camera and an Install button when you hover. Turn off **Update Notices** in Modules to check manually instead. |

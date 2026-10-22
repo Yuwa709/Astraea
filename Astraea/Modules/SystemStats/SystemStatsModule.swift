@@ -13,12 +13,23 @@ final class SystemStatsModule: NotchModule {
     let id: ModuleID = "system-stats"
     let displayName = "System Stats"
     let priority: ModulePriority = .ambient
-    var isEnabled: Bool = true
+    /// Also the switch for the battery wings: off stops their monitor.
+    var isEnabled: Bool = true {
+        didSet { isEnabled ? battery?.start() : battery?.stop() }
+    }
 
     private let service: SystemStatsService
+    /// Nil in tests that exercise the module without a power source.
+    private let battery: BatteryWingMonitor?
 
-    init(service: SystemStatsService) {
+    /// Fired when the battery wings appear or disappear.
+    var onPresenceChange: (() -> Void)?
+
+    init(service: SystemStatsService, battery: BatteryWingMonitor? = nil) {
         self.service = service
+        self.battery = battery
+        battery?.onPresenceChange = { [weak self] in self?.onPresenceChange?() }
+        if isEnabled { battery?.start() }
     }
 
     func makeCompactView() -> AnyView {
@@ -42,6 +53,23 @@ final class SystemStatsModule: NotchModule {
 
     func makeExpandedView() -> AnyView {
         AnyView(SystemStatsExpandedView(service: service))
+    }
+
+    /// Battery wings: time to empty on the left, charge on the right. Last
+    /// in registration order, so media artwork and the update badge outrank
+    /// them; they fill the wings only when nothing else wants them. Nil on a
+    /// Mac with no battery, which keeps the collapsed notch invisible there.
+    func makeCompactLeadingView() -> AnyView? {
+        guard isEnabled, let battery, battery.reading != nil else { return nil }
+        // Nudged toward the housing; centred it sat a touch far out
+        // (user-observed 2026-10-21).
+        return AnyView(BatteryWingTimeLeft(monitor: battery).offset(x: 2))
+    }
+
+    func makeCompactTrailingView() -> AnyView? {
+        guard isEnabled, let battery, battery.reading != nil else { return nil }
+        // Pulled in from the outer corner's flare, as media's waveform is.
+        return AnyView(BatteryWingCharge(monitor: battery).offset(x: -3))
     }
 
     func didBecomeVisible() { service.start() }

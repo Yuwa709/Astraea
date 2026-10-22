@@ -237,9 +237,10 @@ final class NotchPanel: NSPanel {
 
     /// Wing widths, tuned by eye on hardware across four rounds. Asymmetric
     /// on purpose: with equal wings the right side consistently read as
-    /// wider than the left (user-confirmed twice) — the housing does not
-    /// sit perfectly on the panel's center — so the left wing carries a few
-    /// extra points to balance the appearance.
+    /// wider than the left (user-confirmed three times, most recently
+    /// 2026-10-21 with the battery wings, after a brief try at 48/48) — the
+    /// housing does not sit perfectly on the panel's center — so the left
+    /// wing carries a few extra points to balance the appearance.
     nonisolated static let leadingWingWidth: CGFloat = 48
     nonisolated static let trailingWingWidth: CGFloat = 44
 

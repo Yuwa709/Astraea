@@ -323,10 +323,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.refreshPresentation()
         }
         let clipboard = ClipboardModule(service: clipboardService)
+        // Last, so its battery wings show only when neither media nor an
+        // update notice wants the wings.
+        let stats = SystemStatsModule(service: statsService, battery: BatteryWingMonitor())
+        stats.onPresenceChange = { [weak self] in
+            self?.coordinator.refreshPresentation()
+        }
         let modules: [any NotchModule] = [
             media,
             updates,
-            SystemStatsModule(service: statsService)
+            stats
         ]
         // register() applies the stored preference itself, so a module can
         // never start in a state that disagrees with the user's choice.
