@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/logo.png" alt="Astraea app icon: a gold star on deep purple" width="128" height="128">
+
 # Astraea
 
 **Turn the MacBook camera notch into something useful.**
