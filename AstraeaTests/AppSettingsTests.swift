@@ -791,7 +791,7 @@ final class AppSettingsTests: XCTestCase {
         """)
         let settings = store().settings
 
-        XCTAssertEqual(settings.schemaVersion, 15)
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 15, "v14 lands at v15 or beyond")
         XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
         XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
         XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
@@ -832,6 +832,65 @@ final class AppSettingsTests: XCTestCase {
         write(#"{"schemaVersion": 15, "faceUnlockLiveness": 1, "hoverEnterDelay": 0.5}"#)
         settings = store().settings
         XCTAssertEqual(settings.faceUnlockLiveness, .light)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+    }
+
+    // MARK: - v16: Reopen last page
+
+    /// CLAUDE.md's rule: real v15 JSON loads with nothing dropped. Every v15
+    /// field holds a non-default value; the new switch arrives off.
+    func testV15JSONMigratesToV16WithNothingDropped() {
+        write("""
+        {"schemaVersion": 15,
+         "moduleEnablement": {"media": true, "clipboard": false, "app-volume": true},
+         "hoverEnterDelay": 0.42,
+         "visualizerEnabled": true,
+         "showMenuBarIcon": false,
+         "preferMusicOverVideo": false,
+         "spotifyKeychainCleanupPending": true,
+         "capybaraThemeEnabled": true,
+         "appVolume": {"tapsEnabled": true,
+                       "volumes": {"com.hnc.Discord": 35, "webkit": 60},
+                       "outputs": {"com.hnc.Discord": "usb-uid"},
+                       "bass": {"com.hnc.Discord": 2}},
+         "faceUnlockAutoLockInterval": 7,
+         "faceUnlockAtLockScreenEnabled": true,
+         "faceUnlockMatchThreshold": "strict",
+         "faceUnlockLiveness": "off"}
+        """)
+        let settings = store().settings
+
+        XCTAssertEqual(settings.schemaVersion, 16)
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.visualizerEnabled)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.preferMusicOverVideo)
+        XCTAssertTrue(settings.spotifyKeychainCleanupPending)
+        XCTAssertTrue(settings.capybaraThemeEnabled)
+        XCTAssertEqual(settings.appVolume.tapsEnabled, true)
+        XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
+        XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
+        XCTAssertEqual(settings.appVolume.bass, ["com.hnc.Discord": 2])
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .sevenDays)
+        XCTAssertTrue(settings.faceUnlockAtLockScreenEnabled)
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .strict)
+        XCTAssertEqual(settings.faceUnlockLiveness, .off)
+        XCTAssertFalse(settings.reopenLastPage, "off by default, for upgraded installs too")
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+    }
+
+    func testReopenLastPageRoundTrips() {
+        XCTAssertFalse(AppSettings().reopenLastPage)
+        store().update { $0.reopenLastPage = true }
+        XCTAssertTrue(store().settings.reopenLastPage, "must survive a reload")
+    }
+
+    func testMalformedReopenLastPageCostsOnlyItself() {
+        write(#"{"schemaVersion": 16, "reopenLastPage": "yes", "hoverEnterDelay": 0.5}"#)
+        let settings = store().settings
+        XCTAssertFalse(settings.reopenLastPage)
         XCTAssertEqual(settings.hoverEnterDelay, 0.5)
     }
 

@@ -66,6 +66,45 @@ final class NotchNavigationTests: XCTestCase {
                        "an unrelated toggle must not yank the user off their screen")
     }
 
+    // MARK: - Reopen last page
+
+    private func reopen(enabled: Bool = true,
+                        remembered: NotchCoordinator.Destination = .clipboard,
+                        current: NotchCoordinator.Destination = .standby,
+                        open: Bool = false,
+                        available: Bool = true) -> NotchCoordinator.Destination? {
+        NotchCoordinator.pageToReopen(settingEnabled: enabled, remembered: remembered,
+                                      current: current, panelAlreadyOpen: open,
+                                      isAvailable: available)
+    }
+
+    func testHoverReopensTheRememberedPage() {
+        XCTAssertEqual(reopen(), .clipboard)
+        XCTAssertEqual(reopen(remembered: .systemStats), .systemStats)
+    }
+
+    func testSettingOffOpensHome() {
+        XCTAssertNil(reopen(enabled: false))
+    }
+
+    func testClosedOnHomeOpensHome() {
+        XCTAssertNil(reopen(remembered: .standby))
+    }
+
+    func testFileDragDestinationWins() {
+        XCTAssertNil(reopen(current: .fileShelf),
+                     "a drag already chose the shelf before its hover landed")
+    }
+
+    func testAlreadyOpenPanelIsNotYanked() {
+        XCTAssertNil(reopen(open: true),
+                     "hovering a panel a live activity opened must not change its page")
+    }
+
+    func testDisabledModulePageIsNotReopened() {
+        XCTAssertNil(reopen(available: false))
+    }
+
     // MARK: - A second screen
 
     func testEachScreenMapsToItsOwnModule() {

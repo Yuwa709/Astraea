@@ -31,7 +31,8 @@ struct AppSettings: Codable, Equatable {
     /// v13: added faceUnlockAutoLockInterval.
     /// v14: added faceUnlockAtLockScreenEnabled and faceUnlockMatchThreshold.
     /// v15: added faceUnlockLiveness.
-    static let currentSchemaVersion = 15
+    /// v16: added reopenLastPage.
+    static let currentSchemaVersion = 16
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -45,6 +46,12 @@ struct AppSettings: Codable, Equatable {
     /// Seconds the cursor must dwell before the notch expands. User-tuned to
     /// 0.35 on hardware; 0.2 let too much passing traffic through.
     var hoverEnterDelay: TimeInterval = 0.35
+
+    /// Whether a hover reopens the notch on the page it was last closed on
+    /// (clipboard, shelf, stats, app volume) rather than the home screen.
+    /// **Off by default**: home is the behaviour every install has had.
+    /// Only the switch is stored; the page itself is session state.
+    var reopenLastPage: Bool = false
 
     // `spotifyClientID` lived here until v4. It was a per-user field, which
     // was the wrong model: the Client ID identifies *Astraea* to Spotify, not
@@ -189,6 +196,7 @@ struct AppSettings: Codable, Equatable {
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
         case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
+        case reopenLastPage
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -267,6 +275,9 @@ struct AppSettings: Codable, Equatable {
         // this build does not know falls back to it too.
         faceUnlockLiveness = (try? container.decode(
             FaceLivenessLevel.self, forKey: .faceUnlockLiveness)) ?? .default
+        // Absent in v15 and earlier; off is the shipped default.
+        reopenLastPage = (try? container.decode(Bool.self, forKey: .reopenLastPage))
+            ?? false
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -379,6 +390,10 @@ struct AppSettings: Codable, Equatable {
             // for new ones: the match threshold and the lock-screen switch
             // are untouched. Set here explicitly, as in case 12.
             result.faceUnlockLiveness = .default
+            fallthrough
+        case 15:
+            // v16 added reopenLastPage; the lenient decoder fills false for
+            // v15 JSON, which is the off-by-default state. Nothing moves.
             fallthrough
         default:
             break

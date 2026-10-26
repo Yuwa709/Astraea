@@ -298,6 +298,14 @@ struct GeneralSettingsTab: View {
                         .frame(width: 58, alignment: .trailing)
                 }
             }
+
+            Section {
+                Toggle("Reopen last page", isOn: reopenLastPageBinding)
+            } footer: {
+                Text("Hovering opens the notch on the page it was last closed on, such as Clipboard, instead of the home screen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
@@ -309,6 +317,13 @@ struct GeneralSettingsTab: View {
         Binding(
             get: { settings.settings.showMenuBarIcon },
             set: { on in settings.update { $0.showMenuBarIcon = on } }
+        )
+    }
+
+    private var reopenLastPageBinding: Binding<Bool> {
+        Binding(
+            get: { settings.settings.reopenLastPage },
+            set: { coordinator.setReopenLastPage($0) }
         )
     }
 

@@ -115,6 +115,14 @@ final class NotchCoordinator {
         }
     }
 
+    /// The page the panel was on when it last collapsed, kept for the
+    /// "Reopen last page" setting. Session only, like `destination`.
+    ///
+    /// Remembered rather than left in `destination`: the collapse reset
+    /// still runs, so the stats page's sampling stops behind a closed notch
+    /// (hard rule 9). The page is put back on the next hover instead.
+    private var lastClosedDestination: Destination = .standby
+
     /// Session-only pin. Nil in tests that do not care about it.
     private let pinState: PinState?
 
@@ -244,6 +252,12 @@ final class NotchCoordinator {
         arbiter.requestLiveActivity(request)
     }
 
+    /// From Settings. Read at the next hover, so nothing on screen changes.
+    func setReopenLastPage(_ enabled: Bool) {
+        settings.update { $0.reopenLastPage = enabled }
+        Self.logger.notice("Reopen last page \(enabled ? "on" : "off", privacy: .public)")
+    }
+
     /// From Settings: persists and applies to the live panel immediately.
     func setHoverDelay(_ delay: TimeInterval) {
         settings.update { $0.hoverEnterDelay = delay }
@@ -307,6 +321,7 @@ final class NotchCoordinator {
 
     private func hoverChanged(_ hovering: Bool) {
         isHovered = hovering
+        if hovering { reopenLastPageIfWanted() }
         // Content depends on expansion, not just presentation: an expanded
         // notch shows each module's richer view.
         renderContent()
@@ -472,8 +487,41 @@ final class NotchCoordinator {
         arbiter.registeredModules.forEach { $0.notchDidCollapse() }
         // A screen is not a place to still be on the next hover — the
         // panel reopens on the arbitrated default, matching how the
-        // full-lyrics takeover resets.
+        // full-lyrics takeover resets. Unless the user asked otherwise:
+        // `reopenLastPageIfWanted` puts it back on the way in.
+        lastClosedDestination = destination
         destination = .standby
+    }
+
+    /// Restores the page the panel last closed on, when the setting is on
+    /// and the hover is what is opening the panel.
+    private func reopenLastPageIfWanted() {
+        guard let page = Self.pageToReopen(
+            settingEnabled: settings.settings.reopenLastPage,
+            remembered: lastClosedDestination,
+            current: destination,
+            panelAlreadyOpen: lastAppliedState == .expanded,
+            isAvailable: isDoorAvailable(lastClosedDestination)) else { return }
+        destination = page
+        Self.logger.notice("Hover reopened the last page: \(String(describing: page), privacy: .public)")
+    }
+
+    /// The page a hover should reopen, or nil to open as usual.
+    ///
+    /// Nil when the panel is already open — a live activity or the pin got
+    /// there first and the user is looking at it — and when something has
+    /// already chosen a page: a file drag sets the shelf before the hover
+    /// it triggers lands. Nil too for a page whose module was switched off
+    /// since, which would otherwise fall through to the stack anyway.
+    /// Factored out so those rules are tests rather than a reading.
+    static func pageToReopen(settingEnabled: Bool,
+                             remembered: Destination,
+                             current: Destination,
+                             panelAlreadyOpen: Bool,
+                             isAvailable: Bool) -> Destination? {
+        guard settingEnabled, !panelAlreadyOpen, current == .standby,
+              remembered != .standby, isAvailable else { return nil }
+        return remembered
     }
 
     /// Open on a navigated screen only when `content(for:)` really shows
