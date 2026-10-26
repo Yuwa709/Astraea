@@ -79,17 +79,31 @@ final class SettingsWindowTests: XCTestCase {
         XCTAssertEqual(window?.contentMinSize.width ?? 0, 715, accuracy: 0.5)
     }
 
-    /// Order is the spec: General, Modules, Music, Face Unlock, Permissions,
-    /// About — and Spotify is gone as a section of its own, folded into Music.
+    /// Order is the spec: General, Features, Music, Face Unlock, About.
+    /// Spotify and Permissions are gone as pages of their own, both folded
+    /// into Music.
     func testSidebarSectionsAreInOrder() {
         XCTAssertEqual(SettingsSection.allCases.map(\.title),
-                       ["General", "Modules", "Music", "Face Unlock", "Permissions", "About"])
+                       ["General", "Features", "Music", "Face Unlock", "About"])
         XCTAssertFalse(SettingsSection.allCases.map(\.title).contains("Spotify"))
         for section in SettingsSection.allCases {
             XCTAssertFalse(section.symbol.isEmpty, "\(section.title) needs an SF Symbol")
             XCTAssertNotNil(NSImage(systemSymbolName: section.symbol, accessibilityDescription: nil),
                             "\(section.symbol) must be a real SF Symbol")
         }
+    }
+
+    /// Every feature row's icon is a real symbol, the fallback included.
+    func testFeatureIconsAreRealSymbols() {
+        let ids: [ModuleID] = ["media", "system-stats", "clipboard", "file-shelf",
+                               "app-volume", "updates", "not-a-module"]
+        for id in ids {
+            let symbol = FeatureStyle.style(for: id).symbol
+            XCTAssertNotNil(NSImage(systemSymbolName: symbol, accessibilityDescription: nil),
+                            "\(symbol) for \(id) must be a real SF Symbol")
+        }
+        XCTAssertEqual(Set(ids.dropLast().map { FeatureStyle.style(for: $0).order }).count, 6,
+                       "known features each get their own position")
     }
 
     /// Nothing load-bearing may sit only in the menu bar menu any more.

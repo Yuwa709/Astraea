@@ -110,35 +110,35 @@ struct AutomationTarget: Identifiable {
         id: MusicAdapter.bundleID, displayName: "Music", appName: "Music")
 }
 
-/// Automation permission per player.
+/// Automation permission per player, shown as a section of the Music page.
 ///
 /// Both players are AppleScript only and need no account, so there is
 /// deliberately no connection UI here.
-struct PermissionsSettingsTab: View {
+struct PlayerAccessSection: View {
 
     private static let targets: [AutomationTarget] = [.spotify, .music]
 
     @State private var states: [String: AutomationPermission] = [:]
-    /// One probe pass at a time, so "Check again" pressed during a slow
+    /// One probe pass at a time, so "Check Again" pressed during a slow
     /// probe cannot stack a second one behind it.
     @State private var probing = false
 
     var body: some View {
-        Form {
-            Section {
-                ForEach(Self.targets) { target in
-                    PermissionRow(target: target, state: states[target.id] ?? .undetermined)
-                }
-            } footer: {
-                Text("Astraea reads and controls playback with AppleScript. Apple Music needs no account.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        Section {
+            ForEach(Self.targets) { target in
+                PermissionRow(target: target, state: states[target.id] ?? .undetermined)
             }
-            Button("Check again") { Task { await probeAll() } }
-                .disabled(probing)
+        } header: {
+            HStack {
+                Text("Player Access")
+                Spacer()
+                Button("Check Again") { Task { await probeAll() } }
+                    .controlSize(.small)
+                    .disabled(probing)
+            }
+        } footer: {
+            SettingsFooter("Astraea reads and controls Spotify and Music through Automation. No account needed.")
         }
-        .formStyle(.grouped)
-        .padding()
         // On appear and on demand only. Never on a timer: an Automation
         // grant changes when the user changes it, and hard rule 9 forbids
         // a poll with no suspend path. The probe itself runs off the main
