@@ -33,24 +33,43 @@ enum WindowMover {
             logger.notice("place \(zone.id, privacy: .public): no source frame, skipped")
             return nil
         }
-        guard let target = targetFrame(forWindowAX: sourceFrame, zone: zone) else {
+        guard let destination = destination(forWindowAX: sourceFrame, zone: zone) else {
             logger.notice("place \(zone.id, privacy: .public): no screens, skipped")
             return nil
         }
+        let target = destination.target
         logger.notice("place \(zone.id, privacy: .public): source \(describe(sourceFrame), privacy: .public) -> target \(describe(target), privacy: .public)")
-        return apply(target, to: window)
+        let result = apply(target, to: window)
+        guard let actual = result.actual, actual.size != target.size else { return result }
+
+        // The app sized the window its own way. Keep it against the screen
+        // edges its zone touches rather than hanging off the target's corner.
+        let origin = WindowLayoutGeometry.anchoredOrigin(
+            actualSize: actual.size, target: target,
+            unitRect: zone.unitRect, bounds: destination.bounds)
+        guard origin != actual.origin,
+              isSettable(kAXPositionAttribute as String, of: window) else { return result }
+        setPosition(origin, of: window)
+        let anchored = frame(of: window)
+        logger.notice("place \(zone.id, privacy: .public): app kept its own size, re-anchored to \(anchored.map(describe) ?? "unreadable", privacy: .public)")
+        return WindowMoveResult(requested: target, actual: anchored)
     }
 
     /// The AX target frame for `zone` on the screen `windowAX` mostly sits
-    /// on, using the live `NSScreen` list. nil if there are no screens.
-    static func targetFrame(forWindowAX windowAX: CGRect, zone: LayoutZone) -> CGRect? {
+    /// on, and that screen's visible area in AX coords, using the live
+    /// `NSScreen` list. nil if there are no screens.
+    static func destination(forWindowAX windowAX: CGRect,
+                            zone: LayoutZone) -> (target: CGRect, bounds: CGRect)? {
         let screens = NSScreen.screens
         guard let primaryHeight = screens.first?.frame.height else { return nil }
         guard let index = WindowLayoutGeometry.screenIndex(
             forWindowAX: windowAX, screenFrames: screens.map(\.frame), primaryHeight: primaryHeight
         ), screens.indices.contains(index) else { return nil }
-        return WindowLayoutGeometry.targetAXFrame(
-            unitRect: zone.unitRect, visibleFrame: screens[index].visibleFrame, primaryHeight: primaryHeight)
+        let visible = screens[index].visibleFrame
+        let target = WindowLayoutGeometry.targetAXFrame(
+            unitRect: zone.unitRect, visibleFrame: visible, primaryHeight: primaryHeight)
+        let bounds = WindowLayoutGeometry.axRect(fromAppKit: visible, primaryHeight: primaryHeight)
+        return (target, bounds)
     }
 
     /// Applies `target` (AX coords) to `window`: position, size, position

@@ -10,8 +10,17 @@ final class WindowLayoutState {
     let presets: [LayoutPreset] = LayoutPreset.builtIn
     /// The window being dragged, or nil between drags.
     var window: DraggedWindow?
+    /// The dragged app's icon, drawn into the hovered zone.
+    var appIcon: NSImage?
+    /// Width over height of the usable area of the screen the window came
+    /// from, so each preset tile is the shape of the place the window will
+    /// actually land.
+    var screenAspect: CGFloat = 1.6
     /// The zone under the cursor, highlighted and placed into on release.
     var hoveredZoneID: String?
+    /// The preset whose area holds the cursor. Drives the dimming of the
+    /// others, and is never nil while `hoveredZoneID` is set.
+    var hoveredPresetID: String?
     /// Whether Astraea may move other apps' windows. Read when a drag
     /// begins, so the picker can say so instead of failing silently on drop.
     var isTrusted = true
@@ -86,15 +95,25 @@ final class WindowLayoutModule: NotchModule {
 
     private func dragBegan(_ window: DraggedWindow) {
         state.window = window
+        state.appIcon = NSRunningApplication(processIdentifier: window.pid)?.icon
+        state.screenAspect = Self.visibleAspect(forWindowAX: window.startFrameAX) ?? 1.6
         state.hoveredZoneID = nil
+        state.hoveredPresetID = nil
         state.isTrusted = AXIsProcessTrusted()
     }
 
     private func dragMoved(to point: CGPoint) {
         let over = onDragMoved?(point) ?? false
-        let zone = over ? state.anchors.zoneID(at: point) : nil
+        let hit = over ? state.anchors.hit(at: point) : nil
+        state.hoveredPresetID = hit?.presetID
+        let zone = hit?.zoneID
         guard zone != state.hoveredZoneID else { return }
         state.hoveredZoneID = zone
+        // A detent as the cursor settles on each zone, the same feel as
+        // the panel's own expansion. Trackpads without Force Touch ignore it.
+        if zone != nil {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
         Self.logger.notice("Hovered zone: \(zone ?? "none", privacy: .public)")
     }
 
@@ -102,10 +121,11 @@ final class WindowLayoutModule: NotchModule {
         // Hit-tested again at the release point rather than trusting the last
         // move, which may be a few points stale.
         let over = onDragMoved?(point) ?? false
-        let zoneID = over ? state.anchors.zoneID(at: point) : nil
+        let zoneID = over ? state.anchors.hit(at: point)?.zoneID : nil
         let window = state.window
         state.window = nil
         state.hoveredZoneID = nil
+        state.hoveredPresetID = nil
         onDragEnded?()
 
         guard let window, let zoneID,
@@ -118,11 +138,25 @@ final class WindowLayoutModule: NotchModule {
             Self.requestAccessibilityIfNeeded()
             return
         }
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         // After the window server has finished its own drag, or the app's
         // trailing move lands on top of ours.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             Self.place(window, in: zone)
         }
+    }
+
+    /// The visible-area aspect of the screen the window mostly sat on,
+    /// clamped so an unusual display cannot make a tile a sliver.
+    private static func visibleAspect(forWindowAX frame: CGRect) -> CGFloat? {
+        let screens = NSScreen.screens
+        guard let primaryHeight = screens.first?.frame.height,
+              let index = WindowLayoutGeometry.screenIndex(
+                forWindowAX: frame, screenFrames: screens.map(\.frame), primaryHeight: primaryHeight),
+              screens.indices.contains(index) else { return nil }
+        let visible = screens[index].visibleFrame
+        guard visible.height > 0 else { return nil }
+        return min(max(visible.width / visible.height, 1.2), 2.2)
     }
 
     private static func place(_ window: DraggedWindow, in zone: LayoutZone) {
@@ -161,36 +195,83 @@ final class WindowLayoutModule: NotchModule {
     }
 }
 
-/// The picker's zone views, looked up by screen point.
+/// The picker's preset and zone views, looked up by screen point.
 ///
-/// Hit-testing asks each zone's backing NSView for its live on-screen frame
-/// rather than caching SwiftUI geometry. The coordinator measures expanded
-/// content by laying it out in a throwaway hosting view, and that probe
-/// builds zone views too; any cached frame could come from the probe. A
-/// probe view has no window, so asking the views themselves skips it, and
-/// the panel's own resize animation can never leave a frame stale.
+/// Hit-testing asks each view for its live on-screen frame rather than
+/// caching SwiftUI geometry. The coordinator measures expanded content by
+/// laying it out in a throwaway hosting view, and that probe builds these
+/// views too; any cached frame could come from the probe. A probe view has
+/// no window, so asking the views themselves skips it, and the panel's own
+/// resize animation can never leave a frame stale.
 @MainActor
 final class ZoneAnchors {
     private struct Entry {
-        let zoneID: String
+        let id: String
+        /// The preset a zone belongs to; nil for a preset's own entry.
+        let presetID: String?
         weak var view: NSView?
     }
 
-    private var entries: [Entry] = []
+    /// How far a preset's area reaches past its tile: half the 14pt spacing
+    /// between tiles, so neighbouring areas meet and the cursor is never
+    /// between presets. Mirrors `WindowLayoutPickerView`'s spacing.
+    nonisolated static let presetOutset: CGFloat = 7
 
-    func register(_ view: NSView, zoneID: String) {
-        entries.removeAll { $0.view == nil || $0.view === view }
-        entries.append(Entry(zoneID: zoneID, view: view))
+    private var presets: [Entry] = []
+    private var zones: [Entry] = []
+
+    func register(_ view: NSView, presetID: String) {
+        Self.insert(Entry(id: presetID, presetID: nil, view: view), into: &presets)
     }
 
-    /// The zone whose on-screen view contains the point, in AppKit screen
-    /// coordinates. Views without a window — the measuring probe — never match.
-    func zoneID(at point: CGPoint) -> String? {
-        for entry in entries {
-            guard let view = entry.view, let window = view.window else { continue }
-            let frame = window.convertToScreen(view.convert(view.bounds, to: nil))
-            if frame.contains(point) { return entry.zoneID }
+    func register(_ view: NSView, zoneID: String, presetID: String) {
+        Self.insert(Entry(id: zoneID, presetID: presetID, view: view), into: &zones)
+    }
+
+    private static func insert(_ entry: Entry, into entries: inout [Entry]) {
+        entries.removeAll { $0.view == nil || $0.view === entry.view }
+        entries.append(entry)
+    }
+
+    /// The preset and zone under a point in AppKit screen coordinates. Views
+    /// without a window — the measuring probe — never match.
+    func hit(at point: CGPoint) -> (presetID: String, zoneID: String)? {
+        Self.hit(at: point,
+                 presets: presets.compactMap { e in Self.screenFrame(e.view).map { (e.id, $0) } },
+                 zones: zones.compactMap { e in
+                     guard let preset = e.presetID, let frame = Self.screenFrame(e.view) else { return nil }
+                     return (e.id, preset, frame)
+                 })
+    }
+
+    /// Inside a preset's outset area, the cursor is always on one of its
+    /// zones: the one containing it, else the nearest. So sweeping across the
+    /// 2pt gaps inside a tile, or the spacing between tiles, never drops the
+    /// selection and never flickers the dimming. Pure, for tests.
+    nonisolated static func hit(at point: CGPoint,
+                                presets: [(id: String, frame: CGRect)],
+                                zones: [(id: String, presetID: String, frame: CGRect)])
+        -> (presetID: String, zoneID: String)? {
+        guard let preset = presets.first(where: {
+            $0.frame.insetBy(dx: -presetOutset, dy: -presetOutset).contains(point)
+        }) else { return nil }
+        let own = zones.filter { $0.presetID == preset.id }
+        if let inside = own.first(where: { $0.frame.contains(point) }) {
+            return (preset.id, inside.id)
         }
-        return nil
+        guard let nearest = own.min(by: { distance(point, $0.frame) < distance(point, $1.frame) })
+        else { return nil }
+        return (preset.id, nearest.id)
+    }
+
+    nonisolated private static func distance(_ p: CGPoint, _ r: CGRect) -> CGFloat {
+        let dx = max(r.minX - p.x, 0, p.x - r.maxX)
+        let dy = max(r.minY - p.y, 0, p.y - r.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    private static func screenFrame(_ view: NSView?) -> CGRect? {
+        guard let view, let window = view.window else { return nil }
+        return window.convertToScreen(view.convert(view.bounds, to: nil))
     }
 }

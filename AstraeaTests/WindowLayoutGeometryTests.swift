@@ -219,4 +219,54 @@ final class WindowLayoutGeometryTests: XCTestCase {
         let presetIDs = LayoutPreset.builtIn.map(\.id)
         XCTAssertEqual(Set(presetIDs).count, presetIDs.count)
     }
+
+    // MARK: - Anchoring a window the app sized itself
+
+    /// The primary's visible area in AX coords: y 33 (under the menu bar)
+    /// to 912 (above the Dock).
+    private var primaryBounds: CGRect {
+        WindowLayoutGeometry.axRect(fromAppKit: primaryVisible, primaryHeight: primaryHeight)
+    }
+
+    private func anchored(_ id: String, size: CGSize) throws -> CGPoint {
+        WindowLayoutGeometry.anchoredOrigin(
+            actualSize: size, target: try target(id, on: primaryVisible),
+            unitRect: try zone(id).unitRect, bounds: primaryBounds)
+    }
+
+    /// Spotify's minimum size, which is bigger than a quarter.
+    private let spotify = CGSize(width: 800, height: 600)
+
+    func testExactSizeKeepsTheTargetOrigin() throws {
+        let t = try target("quarters.bottomRight", on: primaryVisible)
+        XCTAssertEqual(try anchored("quarters.bottomRight", size: t.size), t.origin)
+    }
+
+    func testOversizedBottomLeftStaysAboveTheDock() throws {
+        // Left at the target's origin it would end at 473 + 600 = 1073,
+        // past the visible bottom at 912.
+        XCTAssertEqual(try anchored("quarters.bottomLeft", size: spotify), CGPoint(x: 0, y: 312))
+    }
+
+    func testOversizedTopRightKeepsToTheRightEdge() throws {
+        XCTAssertEqual(try anchored("quarters.topRight", size: spotify), CGPoint(x: 712, y: 33))
+    }
+
+    func testOversizedCentreThirdCentresOnTheZone() throws {
+        let t = try target("thirds.centre", on: primaryVisible)
+        let origin = try anchored("thirds.centre", size: spotify)
+        XCTAssertEqual(origin.x, (t.midX - spotify.width / 2).rounded())
+        XCTAssertEqual(origin.y, 33)
+    }
+
+    func testUndersizedBottomZoneSitsOnTheBottomEdge() throws {
+        // Terminal snaps to its character grid and comes back a little short.
+        XCTAssertEqual(try anchored("quarters.bottomLeft", size: CGSize(width: 737, height: 432)),
+                       CGPoint(x: 0, y: 480))
+    }
+
+    func testWindowLargerThanTheScreenKeepsItsNearEdge() throws {
+        let origin = try anchored("quarters.bottomRight", size: CGSize(width: 2000, height: 1200))
+        XCTAssertEqual(origin, CGPoint(x: primaryBounds.minX, y: primaryBounds.minY))
+    }
 }
