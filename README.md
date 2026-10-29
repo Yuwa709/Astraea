@@ -56,6 +56,12 @@ Astraea is a native Swift and SwiftUI app. It has no web runtime and no Electron
 - **Clipboard history**, one click from the notch.
 - **File Shelf**: drop files on the notch, then drag them out again or share them over AirDrop.
 
+### 🪟 Window Layouts *(optional)*
+
+- **Drag any window into the notch** and a picker of layouts opens. Keep holding, move onto a zone (left half, top-right quarter, a third, full screen) and let go: the window snaps there, on the screen it came from.
+- **Draw your own layouts** on a grid of up to 6 columns and 4 rows, and hide the built-in ones you don't use. Both live under **Window Layouts** in Features.
+- Apps with a minimum size, like Spotify, stay against the screen edges of their zone instead of hanging off the screen.
+
 ### 🔓 Face Unlock *(optional)*
 
 - Wake your Mac at the lock screen and look at the camera. When Astraea recognises you, it types your password. Nothing leaves your Mac.
@@ -117,7 +123,7 @@ open /Applications/Astraea.app
 | **Automation** for Spotify and/or Music | The notch first opens with that player running | Reading the current track and controlling playback works over AppleScript. One prompt per player. |
 | **System Audio Recording** | You turn on the audio visualiser, or per-app volume for apps other than Spotify and Music | The visualiser reads the audio to draw it, and the mixer adjusts each app's audio stream. Neither records or stores anything. |
 | **Camera** | You add a face in Face Unlock | Enrolling and recognising your face. Frames are processed on your Mac and never saved. |
-| **Accessibility** | You turn on **Unlock the Mac at the lock screen** | Typing your password into the lock screen's password field. |
+| **Accessibility** | You turn on **Unlock the Mac at the lock screen**, or **Window Layouts** | Typing your password into the lock screen's password field, and moving and resizing the window you drop on a layout. |
 
 Decline any of them and the rest of the notch keeps working. The affected feature hides or shows a one-line hint. You can grant the permission later in **System Settings → Privacy & Security**, and Astraea's settings link straight there (Spotify and Music access is under **Music → Player Access**).
 
@@ -156,7 +162,8 @@ security delete-generic-password -s com.techie.PopNotch -a spotify-refresh-token
 
 | Version | Released | Highlights |
 |:---:|:---:|---|
-| [**1.4.3**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.3) <br><sub>Latest</sub> | Oct 26, 2026 | **Pick up where you left off.** A new **Reopen last page** option in General opens the notch on the page you last had open, such as Clipboard, instead of the home screen. Settings is reorganized into five pages with coloured icons: Modules is now **Features**, with a line on what each one does, and Spotify and Music access moved from Permissions into **Music**. |
+| [**1.5.0**](https://github.com/Yuwa709/Astraea/releases/tag/v1.5.0) <br><sub>Latest</sub> | Oct 29, 2026 | **Window Layouts.** Drag a window into the notch, move onto a zone of a layout, and let go: the window snaps to that half, quarter or third of the screen it came from. Draw your own layouts on a grid, and hide the built-ins you don't use. Off by default; turn it on in **Features**. |
+| [**1.4.3**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.3) | Oct 26, 2026 | **Pick up where you left off.** A new **Reopen last page** option in General opens the notch on the page you last had open, such as Clipboard, instead of the home screen. Settings is reorganized into five pages with coloured icons: Modules is now **Features**, with a line on what each one does, and Spotify and Music access moved from Permissions into **Music**. |
 | [**1.4.2**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.2) | Oct 21, 2026 | **Battery in the notch.** When nothing is playing, the notch shows a small battery on the right (green on the charger) and the time until full or empty on the left. It switches the moment you plug in or unplug, and updates only when the battery reports a change. Turn it off with **System Stats** in Modules. Face Unlock now also scans when the screen locks, not only when it wakes. |
 | [**1.4.1**](https://github.com/Yuwa709/Astraea/releases/tag/v1.4.1) | Oct 21, 2026 | **Face Unlock works again**: 1.4.0 refused its own face model after an Xcode update changed the model's build stamp. A new night-sky install window, and the keychain item is now called "Astraea Face Unlock" for new setups. |
 | **1.4.0** | Oct 21, 2026 | **PopNotch is now Astraea, and it's notarized.** Signed with an Apple Developer ID and notarized, so a first install opens without a trip to Privacy & Security. Settings carry over from PopNotch. Re-grant Accessibility and Face Unlock's keychain access once after updating; that identity is permanent. |
