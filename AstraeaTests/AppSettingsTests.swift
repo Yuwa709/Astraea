@@ -860,7 +860,7 @@ final class AppSettingsTests: XCTestCase {
         """)
         let settings = store().settings
 
-        XCTAssertEqual(settings.schemaVersion, 16)
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 16, "v15 lands at v16 or beyond")
         XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
         XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "app-volume": true])
         XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
@@ -892,6 +892,108 @@ final class AppSettingsTests: XCTestCase {
         let settings = store().settings
         XCTAssertFalse(settings.reopenLastPage)
         XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+    }
+
+    // MARK: - v17: Window layouts
+
+    /// CLAUDE.md's rule: real v16 JSON loads with nothing dropped. Every v16
+    /// field holds a non-default value; window layouts arrive empty.
+    func testV16JSONMigratesToV17WithNothingDropped() {
+        write("""
+        {"schemaVersion": 16,
+         "moduleEnablement": {"media": true, "clipboard": false, "window-layout": true},
+         "hoverEnterDelay": 0.42,
+         "visualizerEnabled": true,
+         "showMenuBarIcon": false,
+         "preferMusicOverVideo": false,
+         "spotifyKeychainCleanupPending": true,
+         "capybaraThemeEnabled": true,
+         "appVolume": {"tapsEnabled": true,
+                       "volumes": {"com.hnc.Discord": 35, "webkit": 60},
+                       "outputs": {"com.hnc.Discord": "usb-uid"},
+                       "bass": {"com.hnc.Discord": 2}},
+         "faceUnlockAutoLockInterval": 7,
+         "faceUnlockAtLockScreenEnabled": true,
+         "faceUnlockMatchThreshold": "strict",
+         "faceUnlockLiveness": "off",
+         "reopenLastPage": true}
+        """)
+        let settings = store().settings
+
+        XCTAssertEqual(settings.schemaVersion, 17)
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "window-layout": true])
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.visualizerEnabled)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.preferMusicOverVideo)
+        XCTAssertTrue(settings.spotifyKeychainCleanupPending)
+        XCTAssertTrue(settings.capybaraThemeEnabled)
+        XCTAssertEqual(settings.appVolume.tapsEnabled, true)
+        XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
+        XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
+        XCTAssertEqual(settings.appVolume.bass, ["com.hnc.Discord": 2])
+        XCTAssertEqual(settings.faceUnlockAutoLockInterval, .sevenDays)
+        XCTAssertTrue(settings.faceUnlockAtLockScreenEnabled)
+        XCTAssertEqual(settings.faceUnlockMatchThreshold, .strict)
+        XCTAssertEqual(settings.faceUnlockLiveness, .off)
+        XCTAssertTrue(settings.reopenLastPage)
+        XCTAssertEqual(settings.windowLayouts, AppSettings.WindowLayouts(), "empty for upgraded installs")
+        XCTAssertEqual(settings.windowLayouts.visiblePresets, LayoutPreset.builtIn,
+                       "the picker an upgraded install sees is the one it had")
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+    }
+
+    func testWindowLayoutsRoundTrip() {
+        let layout = CustomLayout(name: "Coding", columns: 3, rows: 1, zones: [
+            GridZone(column: 0, row: 0, columnSpan: 2, rowSpan: 1),
+            GridZone(column: 2, row: 0, columnSpan: 1, rowSpan: 1),
+        ])
+        store().update {
+            $0.windowLayouts.save(layout)
+            $0.windowLayouts.setBuiltIn("thirds", shown: false)
+        }
+        let reloaded = store().settings.windowLayouts
+        XCTAssertEqual(reloaded.custom, [layout], "must survive a reload")
+        XCTAssertEqual(reloaded.hiddenBuiltIns, ["thirds"])
+    }
+
+    /// One unreadable layout loses only itself: not the layouts beside it,
+    /// not the hidden built-ins, not the rest of the settings.
+    func testOneMalformedLayoutCostsOnlyItself() {
+        write("""
+        {"schemaVersion": 17, "hoverEnterDelay": 0.5,
+         "windowLayouts": {
+           "hiddenBuiltIns": ["full", 4],
+           "custom": [
+             {"id": "not-a-uuid", "name": "Bad", "columns": 2, "rows": 1,
+              "zones": [{"column": 0, "row": 0, "columnSpan": 1, "rowSpan": 1}]},
+             {"id": "8C1D2E3F-0000-4000-8000-000000000001", "name": "Huge", "columns": 40, "rows": 1,
+              "zones": [{"column": 0, "row": 0, "columnSpan": 1, "rowSpan": 1}]},
+             {"id": "8C1D2E3F-0000-4000-8000-000000000002", "name": "Good", "columns": 2, "rows": 2,
+              "zones": [{"column": 0, "row": 0, "columnSpan": 1, "rowSpan": 2},
+                        {"column": 0, "row": 0, "columnSpan": 1, "rowSpan": 1},
+                        {"column": 1, "row": 0, "columnSpan": 1, "rowSpan": 9},
+                        "junk",
+                        {"column": 1, "row": 1, "columnSpan": 1, "rowSpan": 1}]}
+           ]}}
+        """)
+        let settings = store().settings
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+        XCTAssertEqual(settings.windowLayouts.hiddenBuiltIns, ["full"])
+        let custom = settings.windowLayouts.custom ?? []
+        XCTAssertEqual(custom.map(\.name), ["Good"])
+        XCTAssertEqual(custom.first?.zones, [
+            GridZone(column: 0, row: 0, columnSpan: 1, rowSpan: 2),
+            GridZone(column: 1, row: 1, columnSpan: 1, rowSpan: 1),
+        ], "the overlapping, oversized and junk zones drop; the valid ones stay")
+    }
+
+    func testMalformedWindowLayoutsCostOnlyThemselves() {
+        write(#"{"schemaVersion": 17, "windowLayouts": "nope", "reopenLastPage": true}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.windowLayouts, AppSettings.WindowLayouts())
+        XCTAssertTrue(settings.reopenLastPage)
     }
 
     // MARK: - Module toggles decode per entry

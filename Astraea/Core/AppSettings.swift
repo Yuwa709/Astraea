@@ -32,7 +32,8 @@ struct AppSettings: Codable, Equatable {
     /// v14: added faceUnlockAtLockScreenEnabled and faceUnlockMatchThreshold.
     /// v15: added faceUnlockLiveness.
     /// v16: added reopenLastPage.
-    static let currentSchemaVersion = 16
+    /// v17: added windowLayouts.
+    static let currentSchemaVersion = 17
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -143,6 +144,76 @@ struct AppSettings: Codable, Equatable {
     /// refuses frames that show glare or a device edge round the face.
     var faceUnlockLiveness: FaceLivenessLevel = .default
 
+    /// Window Layouts' custom presets and which built-ins the picker hides.
+    /// Absent in v16 and earlier, which decodes as an empty `WindowLayouts`:
+    /// no custom layouts, every built-in showing.
+    var windowLayouts = WindowLayouts()
+
+    /// What the window layout picker offers. Both fields optional, nil the
+    /// shipped default, for the reason `AppVolume`'s are.
+    struct WindowLayouts: Equatable {
+        /// Layouts built in Settings, in the order they were added, which is
+        /// the order the picker shows them after the built-ins.
+        var custom: [CustomLayout]?
+
+        /// Ids of built-in presets (`LayoutPreset.builtIn`) the user hid.
+        /// Hidden rather than shown, so a built-in added later appears
+        /// without a migration.
+        var hiddenBuiltIns: [String]?
+
+        /// The picker's presets: the built-ins not hidden, then the custom
+        /// ones. Never empty — with everything hidden and nothing built,
+        /// the built-ins come back rather than leaving a picker with
+        /// nothing to drop on.
+        var visiblePresets: [LayoutPreset] {
+            let hidden = Set(hiddenBuiltIns ?? [])
+            let presets = LayoutPreset.builtIn.filter { !hidden.contains($0.id) }
+                + (custom ?? []).map(\.preset)
+            return presets.isEmpty ? LayoutPreset.builtIn : presets
+        }
+
+        /// Whether `presetID` is the one layout the picker still shows. The
+        /// control that would take it away is disabled rather than letting
+        /// `visiblePresets` quietly bring every built-in back.
+        func isOnlyVisible(_ presetID: String) -> Bool {
+            let hidden = Set(hiddenBuiltIns ?? [])
+            let visible = LayoutPreset.builtIn.map(\.id).filter { !hidden.contains($0) }
+                + (custom ?? []).map(\.presetID)
+            return visible == [presetID]
+        }
+
+        mutating func setBuiltIn(_ id: String, shown: Bool) {
+            var ids = hiddenBuiltIns ?? []
+            ids.removeAll { $0 == id }
+            if !shown { ids.append(id) }
+            hiddenBuiltIns = ids.isEmpty ? nil : ids
+        }
+
+        /// Replaces the layout with the same id, or adds it at the end.
+        mutating func save(_ layout: CustomLayout) {
+            var list = custom ?? []
+            if let index = list.firstIndex(where: { $0.id == layout.id }) {
+                list[index] = layout
+            } else {
+                list.append(layout)
+            }
+            custom = list
+        }
+
+        mutating func delete(_ id: UUID) {
+            var list = custom ?? []
+            list.removeAll { $0.id == id }
+            custom = list.isEmpty ? nil : list
+        }
+
+        /// "Layout 1", "Layout 2", … — the first number no saved layout uses.
+        var nextLayoutName: String {
+            let names = Set((custom ?? []).map(\.name))
+            let number = (1...).first { !names.contains("Layout \($0)") } ?? 1
+            return "Layout \(number)"
+        }
+    }
+
     /// The tap engine's settings. Spotify's and Music's volumes are never
     /// here: they live in the apps themselves, set through AppleScript. Their
     /// output choice is, because AppleScript cannot route: a routed Spotify
@@ -196,7 +267,7 @@ struct AppSettings: Codable, Equatable {
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
         case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
-        case reopenLastPage
+        case reopenLastPage, windowLayouts
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -278,6 +349,10 @@ struct AppSettings: Codable, Equatable {
         // Absent in v15 and earlier; off is the shipped default.
         reopenLastPage = (try? container.decode(Bool.self, forKey: .reopenLastPage))
             ?? false
+        // Absent in v16 and earlier; empty is the shipped default. `try?`
+        // also catches a value that is not an object at all.
+        windowLayouts = (try? container.decode(WindowLayouts.self, forKey: .windowLayouts))
+            ?? WindowLayouts()
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -395,6 +470,11 @@ struct AppSettings: Codable, Equatable {
             // v16 added reopenLastPage; the lenient decoder fills false for
             // v15 JSON, which is the off-by-default state. Nothing moves.
             fallthrough
+        case 16:
+            // v17 added windowLayouts; the lenient decoder fills an empty one
+            // for v16 JSON: no custom layouts, every built-in showing, which
+            // is exactly the picker v16 had. Nothing moves.
+            fallthrough
         default:
             break
         }
@@ -453,6 +533,43 @@ extension AppSettings.AppVolume: Codable {
         init(from decoder: Decoder) throws {
             let level = try? decoder.singleValueContainer().decode(Int.self)
             value = level.flatMap { BassBoost.levels.contains($0) ? $0 : nil }
+        }
+    }
+}
+
+// In an extension so `WindowLayouts` keeps its memberwise initializer.
+extension AppSettings.WindowLayouts: Codable {
+
+    private enum CodingKeys: String, CodingKey {
+        case custom, hiddenBuiltIns
+    }
+
+    /// Lenient per entry: a custom layout that cannot be read (see
+    /// `CustomLayout.init(from:)`) loses only itself, never the layouts
+    /// beside it or the hidden built-ins.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        custom = (try? container.decodeIfPresent([LenientLayout].self, forKey: .custom))?
+            .compactMap(\.value)
+        hiddenBuiltIns = (try? container.decodeIfPresent([LenientID].self, forKey: .hiddenBuiltIns))?
+            .compactMap(\.value)
+    }
+
+    /// One saved layout, or nil when it does not decode.
+    private struct LenientLayout: Decodable {
+        let value: CustomLayout?
+
+        init(from decoder: Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(CustomLayout.self)
+        }
+    }
+
+    /// One hidden preset id, or nil when the stored value is not a string.
+    private struct LenientID: Decodable {
+        let value: String?
+
+        init(from decoder: Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(String.self)
         }
     }
 }

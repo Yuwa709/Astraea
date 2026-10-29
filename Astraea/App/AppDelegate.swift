@@ -376,6 +376,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowLayout.onDragEnded = { [weak self] in
             self?.coordinator.windowDragEnded()
         }
+        windowLayout.presetsProvider = { [weak self] in
+            self?.settings.settings.windowLayouts.visiblePresets ?? LayoutPreset.builtIn
+        }
         coordinator.register(windowLayout, enabledByDefault: false)
 
         Self.logger.notice("Launched with \(modules.count, privacy: .public) modules registered")

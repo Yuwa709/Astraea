@@ -44,7 +44,8 @@ struct FeatureStyle {
 
 /// One switch per registered feature, each with its icon and a line on what
 /// it does. Feature-specific options live on that feature's own page (Music)
-/// or directly under its switch here (App Volume's taps).
+/// or directly under its switch here (App Volume's taps, Window Layouts'
+/// layouts).
 struct FeaturesSettingsTab: View {
 
     let coordinator: NotchCoordinator
@@ -72,6 +73,9 @@ struct FeaturesSettingsTab: View {
                     }
                     if feature.id == "app-volume", isOn.wrappedValue, let appVolume {
                         tapsToggle(appVolume)
+                    }
+                    if feature.id == "window-layout", isOn.wrappedValue {
+                        WindowLayoutsOptions(settings: settings)
                     }
                 }
             } footer: {

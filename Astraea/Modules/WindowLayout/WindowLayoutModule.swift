@@ -7,7 +7,9 @@ import os
 @MainActor
 @Observable
 final class WindowLayoutState {
-    let presets: [LayoutPreset] = LayoutPreset.builtIn
+    /// Read from settings as each drag begins, so an edit in Settings shows
+    /// on the next drag and never changes the picker under the cursor.
+    var presets: [LayoutPreset] = LayoutPreset.builtIn
     /// The window being dragged, or nil between drags.
     var window: DraggedWindow?
     /// The dragged app's icon, drawn into the hovered zone.
@@ -65,6 +67,8 @@ final class WindowLayoutModule: NotchModule {
     var onDragMoved: ((CGPoint) -> Bool)?
     /// The drag is over, placed or not; the notch can close.
     var onDragEnded: (() -> Void)?
+    /// The presets the user wants in the picker, built-in and custom.
+    var presetsProvider: (() -> [LayoutPreset])?
 
     let state = WindowLayoutState()
     private let monitor = WindowDragMonitor()
@@ -95,6 +99,8 @@ final class WindowLayoutModule: NotchModule {
 
     private func dragBegan(_ window: DraggedWindow) {
         state.window = window
+        state.presets = presetsProvider?() ?? LayoutPreset.builtIn
+        Self.logger.notice("Picker presets: \(self.state.presets.map(\.name).joined(separator: ", "), privacy: .public)")
         state.appIcon = NSRunningApplication(processIdentifier: window.pid)?.icon
         state.screenAspect = Self.visibleAspect(forWindowAX: window.startFrameAX) ?? 1.6
         state.hoveredZoneID = nil

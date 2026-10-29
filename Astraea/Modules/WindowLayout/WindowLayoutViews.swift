@@ -19,9 +19,15 @@ struct WindowLayoutPickerView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(state.presets) { preset in
-                    PresetTile(preset: preset, state: state)
+            // Rows 14pt apart, as tiles are, so `ZoneAnchors.presetOutset`
+            // closes the gap between rows too.
+            VStack(spacing: 14) {
+                ForEach(Self.rows(of: state.presets), id: \.first?.id) { row in
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(row) { preset in
+                            PresetTile(preset: preset, state: state)
+                        }
+                    }
                 }
             }
             if !state.isTrusted {
@@ -32,6 +38,19 @@ struct WindowLayoutPickerView: View {
             }
         }
         .foregroundStyle(.white)
+    }
+
+    /// At most five tiles a row, the rows as even as they can be: six
+    /// presets are three and three, not five and one.
+    static let maxPerRow = 5
+
+    static func rows(of presets: [LayoutPreset]) -> [[LayoutPreset]] {
+        guard !presets.isEmpty else { return [] }
+        let rowCount = (presets.count + maxPerRow - 1) / maxPerRow
+        let perRow = (presets.count + rowCount - 1) / rowCount
+        return stride(from: 0, to: presets.count, by: perRow).map {
+            Array(presets[$0..<min($0 + perRow, presets.count)])
+        }
     }
 }
 
