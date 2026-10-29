@@ -365,6 +365,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileShelfService.onDragOutChange = { [weak self] active in
             self?.coordinator.dragOutChanged(active)
         }
+        // Off by default: it watches mouse presses system-wide and moves
+        // other apps' windows. Its `isEnabled` setter installs and removes
+        // the mouse monitor. The module reports the dragged cursor; the
+        // coordinator decides whether that is over the notch.
+        let windowLayout = WindowLayoutModule()
+        windowLayout.onDragMoved = { [weak self] point in
+            self?.coordinator.windowDragMoved(to: point) ?? false
+        }
+        windowLayout.onDragEnded = { [weak self] in
+            self?.coordinator.windowDragEnded()
+        }
+        coordinator.register(windowLayout, enabledByDefault: false)
 
         Self.logger.notice("Launched with \(modules.count, privacy: .public) modules registered")
 

@@ -30,9 +30,12 @@ struct FeatureStyle {
         case "app-volume":
             FeatureStyle(symbol: "speaker.wave.2.fill", tint: .purple,
                          summary: "Each app's volume and output.", order: 4)
+        case "window-layout":
+            FeatureStyle(symbol: "rectangle.3.group.fill", tint: .blue,
+                         summary: "Drag a window to the notch to snap it into a layout.", order: 5)
         case "updates":
             FeatureStyle(symbol: "arrow.down.circle.fill", tint: .indigo,
-                         summary: "Shows new versions in the notch.", order: 5)
+                         summary: "Shows new versions in the notch.", order: 6)
         default:
             fallback
         }
@@ -92,7 +95,12 @@ struct FeaturesSettingsTab: View {
     private func binding(for id: ModuleID, current: Bool) -> Binding<Bool> {
         Binding(
             get: { settings.isEnabled(id, default: current) },
-            set: { coordinator.setEnabled($0, for: id) }
+            set: {
+                coordinator.setEnabled($0, for: id)
+                // Moving windows needs Accessibility; ask at the toggle, the
+                // way the taps toggle asks for audio recording at its own.
+                if id == "window-layout", $0 { WindowLayoutModule.requestAccessibilityIfNeeded() }
+            }
         )
     }
 

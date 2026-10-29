@@ -27,6 +27,11 @@ final class NotchCoordinator {
 
     private var isHovered = false
 
+    /// True while another app's window is being dragged over the notch.
+    /// Counts as hover: the button is held in that app, so the panel's own
+    /// tracking area never reports the cursor arriving.
+    private var isWindowDragOver = false
+
     /// `arbiter` is injectable for tests. Defaulted via nil rather than
     /// `= NotchArbiter()`, because a default argument is evaluated in a
     /// nonisolated context and the arbiter is `@MainActor`.
@@ -46,6 +51,9 @@ final class NotchCoordinator {
         case fileShelf
         case systemStats
         case appVolume
+        /// The window layout picker. No door leads here: only a window
+        /// dragged into the notch opens it.
+        case windowLayout
 
         /// The module a screen belongs to, so the disabled-module fallbacks
         /// stay one rule rather than one branch per destination.
@@ -56,6 +64,7 @@ final class NotchCoordinator {
             case .fileShelf: "file-shelf"
             case .systemStats: "system-stats"
             case .appVolume: "app-volume"
+            case .windowLayout: "window-layout"
             }
         }
     }
@@ -355,7 +364,7 @@ final class NotchCoordinator {
     /// checks and one of them eventually missed.
     private func desiredState() -> NotchPanel.State {
         if Self.shouldExpand(isPinned: isPinned,
-                             isHovered: isHovered,
+                             isHovered: isHovered || isWindowDragOver,
                              hasLiveActivity: isShowingLiveActivity) { return .expanded }
         if standbyWings() != nil { return .compact }
         return .idle
@@ -451,6 +460,64 @@ final class NotchCoordinator {
         applyState()
     }
 
+    // MARK: - Window drags
+
+    /// How far either side of the housing a dragged window's cursor still
+    /// opens the picker. The housing alone is a small target to hit while
+    /// hauling a window; this is wider, never taller.
+    nonisolated static let windowDragSlop: CGFloat = 40
+
+    /// A window drag's cursor moved, in AppKit screen coordinates. Opens the
+    /// picker when it reaches the notch and closes it when it leaves.
+    /// Returns whether the cursor is over the notch.
+    ///
+    /// Opens immediately, with no hover dwell: hauling a window to the top
+    /// of the screen is not passing traffic.
+    @discardableResult
+    func windowDragMoved(to point: CGPoint) -> Bool {
+        guard let panel, let screen = currentScreen, isDoorAvailable(.windowLayout) else {
+            return false
+        }
+        let housing = NotchPanel.notchRect(on: screen).insetBy(dx: -Self.windowDragSlop, dy: 0)
+        // Once open, the whole panel counts — the zones hang below the
+        // housing. The union keeps a cursor in the slop inside while the
+        // panel is still growing past it.
+        let target = isWindowDragOver ? panel.frame.union(housing) : housing
+        let over = NotchHoverView.isInsideForExit(mouse: point, panel: target,
+                                                  screenTop: screen.frame.maxY)
+        guard over != isWindowDragOver else { return over }
+        isWindowDragOver = over
+        if over {
+            destination = .windowLayout
+            Self.logger.notice("Window dragged over the notch; opening the layout picker")
+        } else {
+            leaveWindowLayoutIfStillOpen()
+            Self.logger.notice("Window dragged off the notch; closing the layout picker")
+        }
+        renderContent()
+        applyState()
+        return over
+    }
+
+    /// The window drag is over: the notch closes by the usual rules.
+    func windowDragEnded() {
+        guard isWindowDragOver || destination == .windowLayout else { return }
+        isWindowDragOver = false
+        leaveWindowLayoutIfStillOpen()
+        renderContent()
+        applyState()
+    }
+
+    /// When the panel stays open without the drag — pinned, or the hover
+    /// view saw the cursor — go home rather than leave an empty picker up.
+    /// A collapse needs nothing: `resetOnCollapse` resets the destination.
+    private func leaveWindowLayoutIfStillOpen() {
+        guard destination == .windowLayout,
+              Self.shouldExpand(isPinned: isPinned, isHovered: isHovered,
+                                hasLiveActivity: isShowingLiveActivity) else { return }
+        destination = .standby
+    }
+
     /// Chrome controls call this; it re-renders and re-measures, since
     /// destinations differ in size.
     func navigate(to destination: Destination) {
@@ -485,11 +552,15 @@ final class NotchCoordinator {
     private func resetOnCollapse(to state: NotchPanel.State) {
         guard lastAppliedState == .expanded && state != .expanded else { return }
         arbiter.registeredModules.forEach { $0.notchDidCollapse() }
+        // The picker is not a page to come back to: reopening it on the next
+        // hover would show zones with no window to place.
         // A screen is not a place to still be on the next hover — the
         // panel reopens on the arbitrated default, matching how the
         // full-lyrics takeover resets. Unless the user asked otherwise:
         // `reopenLastPageIfWanted` puts it back on the way in.
-        lastClosedDestination = destination
+        if destination != .windowLayout {
+            lastClosedDestination = destination
+        }
         destination = .standby
     }
 
@@ -800,6 +871,12 @@ final class NotchCoordinator {
     /// the collapsed panel draws wings, not content — so the compact-view
     /// branch at the bottom is unreachable today. Kept, not deleted.
     private func content(for presentation: NotchPresentation) -> AnyView? {
+        // Ahead of the arbiter: a window held over the notch is the user
+        // acting right now, and must not be hidden behind a track change.
+        if isWindowDragOver, destination == .windowLayout,
+           let module = arbiter.module(for: "window-layout"), module.isEnabled {
+            return module.makeExpandedView()
+        }
         switch presentation {
         case .standby(let ids):
             let modules = ids.compactMap { arbiter.module(for: $0) }
