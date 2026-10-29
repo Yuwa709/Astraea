@@ -3,14 +3,14 @@
     <channel>
         <title>Astraea</title>
         <item>
-            <title>1.4.3</title>
-            <pubDate>Mon, 26 Oct 2026 16:28:03 -0700</pubDate>
+            <title>1.5.0</title>
+            <pubDate>Thu, 29 Oct 2026 16:11:41 -0700</pubDate>
             <link>https://github.com/Yuwa709/Astraea</link>
-            <sparkle:version>1.4.3</sparkle:version>
-            <sparkle:shortVersionString>1.4.3</sparkle:shortVersionString>
+            <sparkle:version>1.5.0</sparkle:version>
+            <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/Yuwa709/Astraea/releases/download/v1.4.3/Astraea-1.4.3.zip" length="7630913" type="application/octet-stream" sparkle:edSignature="0JoP5KB+W5NK3OUWA++f0CBCW4D6/o/DzSKHZ3QSB4s3kQ7inKbdSBNKgI3BaY9BQEH3buy1Wq97aTFrA834Bw=="/>
+            <enclosure url="https://github.com/Yuwa709/Astraea/releases/download/v1.5.0/Astraea-1.5.0.zip" length="7774869" type="application/octet-stream" sparkle:edSignature="EjypnqkJnCQW+myLNvdykZR2RJ5SF6R8VmyeduTEhP9kSNbptcbNOg2D7dMIl3WbYyHpch79acWi0ZqhWWcQCQ=="/>
         </item>
     </channel>
 </rss>
