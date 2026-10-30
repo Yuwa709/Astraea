@@ -267,6 +267,38 @@ final class MediaFixesTests: XCTestCase {
             downloadedFrom: "https://i.scdn.co/image/old", current: nil))
     }
 
+    func testSkipDoesNotCarryPreviousCover() {
+        let old = (url: "https://i.scdn.co/image/old", data: Data([1]))
+        var notified = NowPlaying()
+        notified.title = "Next"
+        notified.artworkIdentifier = "spotify:track:next"
+        // The notification for the new track: no URL, so no cover yet.
+        let first = SpotifyAdapter.merge(notified, onto: nil, cache: old)
+        XCTAssertNil(first.artworkData)
+        // Its pull: same track ID as the notification, a new URL.
+        var pulled = notified
+        pulled.artworkURL = "https://i.scdn.co/image/new"
+        XCTAssertNil(SpotifyAdapter.merge(pulled, onto: first, cache: old).artworkData,
+                     "the previous track's cover must not land on the new one")
+    }
+
+    func testCoverCarriesWithinATrackAndAcrossAnAlbum() {
+        let cache = (url: "https://i.scdn.co/image/album", data: Data([1]))
+        var last = NowPlaying()
+        last.artworkIdentifier = "spotify:track:a"
+        last.artworkURL = cache.url
+        var paused = NowPlaying()
+        paused.artworkIdentifier = "spotify:track:a" // a notification, no URL
+        let resumed = SpotifyAdapter.merge(paused, onto: last, cache: cache)
+        XCTAssertEqual(resumed.artworkData, cache.data, "pause/resume keeps the cover")
+        XCTAssertEqual(resumed.artworkURL, cache.url)
+        var sameAlbum = NowPlaying()
+        sameAlbum.artworkIdentifier = "spotify:track:b"
+        sameAlbum.artworkURL = cache.url
+        XCTAssertEqual(SpotifyAdapter.merge(sameAlbum, onto: last, cache: cache).artworkData,
+                       cache.data, "same-album tracks share the cover")
+    }
+
     // MARK: - 7. A quitting Music is never Apple-Evented
 
     func testStoppedPlayerInfoSkipsThePull() {

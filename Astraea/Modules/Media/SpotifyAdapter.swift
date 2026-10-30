@@ -409,21 +409,36 @@ final class SpotifyAdapter: MediaSource {
     }
 
     private func publish(_ snapshot: NowPlaying) {
-        var merged = snapshot
-        // Keep artwork across pause/resume and metadata-only updates.
-        if merged.artworkData == nil, let cache = artworkCache,
-           merged.artworkIdentifier == lastSnapshot?.artworkIdentifier {
-            merged.artworkData = cache.data
-        }
-        // Only the pull path parses an artwork URL; the notification path
-        // has no such field. Same track means the last one still describes
-        // it, so a notification-driven update does not blank it.
-        if merged.artworkURL == nil,
-           merged.artworkIdentifier == lastSnapshot?.artworkIdentifier {
-            merged.artworkURL = lastSnapshot?.artworkURL
-        }
+        let merged = Self.merge(snapshot, onto: lastSnapshot, cache: artworkCache)
         lastSnapshot = merged
         onUpdate?(merged)
+    }
+
+    /// Carries the last snapshot's artwork onto `snapshot` where it still
+    /// belongs. Pure, for tests.
+    ///
+    /// Only the pull path parses an artwork URL; the notification path has
+    /// no such field. Same track means the last one still describes it, so
+    /// a notification-driven update does not blank it.
+    ///
+    /// The cached bytes then carry only when their URL is this track's. The
+    /// cache used to carry whenever the track ID matched the last
+    /// snapshot's, but a skip publishes twice for the new track (the
+    /// notification, then its pull), so the second publish matched the
+    /// first and put the previous track's cover on the new one
+    /// (user-reported 2026-10-30). Same-album tracks share a URL, so their
+    /// cover still carries across.
+    nonisolated static func merge(_ snapshot: NowPlaying, onto last: NowPlaying?,
+                                  cache: (url: String, data: Data)?) -> NowPlaying {
+        var merged = snapshot
+        if merged.artworkURL == nil,
+           merged.artworkIdentifier == last?.artworkIdentifier {
+            merged.artworkURL = last?.artworkURL
+        }
+        if merged.artworkData == nil, let cache, cache.url == merged.artworkURL {
+            merged.artworkData = cache.data
+        }
+        return merged
     }
 
     // MARK: - Artwork

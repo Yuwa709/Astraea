@@ -561,7 +561,7 @@ private struct MediaPlayerArtwork: View {
         .onChange(of: module.artworkImage) { _, _ in
             // Artwork that lands after the flip (a fetched cover) or with
             // no track change goes straight in. Mid-turn it waits: the
-            // flip's midpoint takes whatever is newest. A key that has moved
+            // flip's midpoint, and again its end, take whatever is newest. A key that has moved
             // on means this track's flip is about to start, so wait for it.
             guard !flipping, shownKey == trackKey else { return }
             shown = live
@@ -595,6 +595,10 @@ private struct MediaPlayerArtwork: View {
             } completion: {
                 guard generation == current else { return }
                 flipping = false
+                // Artwork that landed during the second half was held back
+                // (see onChange above) and nothing else re-reads it, so the
+                // midpoint's cover stayed for the whole track.
+                shown = live
             }
         }
     }
