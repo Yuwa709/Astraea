@@ -88,10 +88,19 @@ final class FileShelfService {
 
     @discardableResult
     func add(_ url: URL) -> Bool {
-        guard let bookmark = try? url.bookmarkData(options: [.withSecurityScope],
-                                                   includingResourceValuesForKeys: nil,
-                                                   relativeTo: nil) else {
-            Self.logger.error("Could not bookmark \(url.lastPathComponent, privacy: .public)")
+        let bookmark: Data
+        do {
+            bookmark = try url.bookmarkData(options: [.withSecurityScope],
+                                            includingResourceValuesForKeys: nil,
+                                            relativeTo: nil)
+        } catch {
+            // The error and what the app itself can see of the file: a
+            // failure here used to log only the name, which said nothing
+            // about why (2026-10-30).
+            let nsError = error as NSError
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            let readable = FileManager.default.isReadableFile(atPath: url.path)
+            Self.logger.error("Could not bookmark \(url.path, privacy: .public): \(nsError.domain, privacy: .public) \(nsError.code, privacy: .public) \(nsError.localizedDescription, privacy: .public); exists=\(exists, privacy: .public) readable=\(readable, privacy: .public) fileURL=\(url.isFileURL, privacy: .public)")
             return false
         }
         let entry = FileShelfEntry(bookmark: bookmark, name: url.lastPathComponent)
