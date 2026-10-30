@@ -25,7 +25,7 @@ struct FacePasswordSection: View {
                 buttons
             } label: {
                 Label {
-                    SettingsLabel("Mac password", detail: isStored ? "Stored, encrypted" : "Not set")
+                    SettingsLabel("Mac password", detail: detail)
                 } icon: {
                     Image(systemName: isStored ? "lock.fill" : "minus.circle")
                 }
@@ -35,9 +35,13 @@ struct FacePasswordSection: View {
             }
         } header: {
             Text("Mac Password")
-        } footer: {
-            SettingsFooter("With \u{201C}Unlock the Mac at the lock screen\u{201D} on, Face Unlock types this password for you when it recognises you there.")
         }
+    }
+
+    /// The status, then what the password is for.
+    private var detail: String {
+        let status = isStored ? "Stored, encrypted." : "Not set."
+        return "\(status) With \u{201C}Unlock the Mac at the lock screen\u{201D} on, Face Unlock types it for you when it recognises you there."
     }
 
     /// One view, so the sheet and the confirmation hang off a single anchor.

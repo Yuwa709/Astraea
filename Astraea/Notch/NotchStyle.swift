@@ -76,6 +76,9 @@ enum NotchStyle {
     static func motion(_ animation: Animation = .snappy(duration: 0.22)) -> Animation? {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : animation
     }
+
+    /// The quick fade a surface takes as the pointer enters or leaves it.
+    static var hoverMotion: Animation? { motion(.easeOut(duration: 0.12)) }
 }
 
 // MARK: - Building blocks
@@ -84,12 +87,10 @@ enum NotchStyle {
 /// status, and trailing controls.
 ///
 /// The glyph is plain white with no tile behind it (user, 2026-10-29: "why
-/// does everything have to be in a box"). `tint` is kept in the signature so
-/// call sites stay unchanged, but is not drawn.
+/// does everything have to be in a box"), so a header takes no tint.
 struct NotchPageHeader<Trailing: View>: View {
     let symbol: String
     let title: String
-    let tint: Color
     var subtitle: String?
     @ViewBuilder var trailing: () -> Trailing
 
@@ -120,8 +121,8 @@ struct NotchPageHeader<Trailing: View>: View {
 }
 
 extension NotchPageHeader where Trailing == EmptyView {
-    init(symbol: String, title: String, tint: Color, subtitle: String? = nil) {
-        self.init(symbol: symbol, title: title, tint: tint, subtitle: subtitle) { EmptyView() }
+    init(symbol: String, title: String, subtitle: String? = nil) {
+        self.init(symbol: symbol, title: title, subtitle: subtitle) { EmptyView() }
     }
 }
 
@@ -227,7 +228,7 @@ private struct NotchRowButtonBody: View {
                           : hovering ? NotchStyle.Fill.hover : resting))
             .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .onHover { hovering = $0 }
-            .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: hovering)
+            .animation(NotchStyle.hoverMotion, value: hovering)
     }
 }
 

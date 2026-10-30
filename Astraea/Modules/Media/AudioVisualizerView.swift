@@ -573,27 +573,3 @@ enum SpectrumEnvelope {
         return tangents
     }
 }
-
-/// The visualiser's denied path in the panel: one line in the header corner
-/// the bars used to occupy, shown only when capture was refused.
-///
-/// The scrub bar has no room for text, and with capture refused it simply
-/// lies flat. Without this hint a refused System Audio Recording grant would
-/// look exactly like the feature being off.
-struct AudioVisualizerPermissionHint: View {
-
-    let service: AudioVisualizerService
-
-    var body: some View {
-        // Enabled but not capturing: almost always the permission. A hint
-        // beats a spectrum that silently never moves.
-        if service.isEnabled, service.lastError != nil {
-            Text("Allow System Audio Recording")
-                .font(.system(size: 8))
-                .foregroundStyle(.white.opacity(0.5))
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: 80)
-        }
-    }
-}

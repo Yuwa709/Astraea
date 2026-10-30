@@ -26,12 +26,10 @@ struct FaceSessionSection: View {
                 ForEach(AutoLockInterval.allCases) { Text($0.title).tag($0) }
             } label: {
                 SettingsLabel("Auto-lock after",
-                              detail: "After this long without use, Face Unlock locks and needs Touch ID or your password again.")
+                              detail: "After this long without use, Face Unlock locks and needs Touch ID or your password again. With \u{201C}Unlock the Mac at the lock screen\u{201D} on and a password stored, it stays unlocked across restarts until then.")
             }
         } header: {
             Text("Access")
-        } footer: {
-            SettingsFooter("With \u{201C}Unlock the Mac at the lock screen\u{201D} on and a password stored, Face Unlock stays unlocked across restarts until auto-lock or Lock Now. If it is locked when Astraea starts, Astraea asks once after you log in for Touch ID or your password.")
         }
     }
 
@@ -44,7 +42,7 @@ struct FaceSessionSection: View {
             } label: {
                 Label {
                     SettingsLabel("Face Unlock is locked",
-                                  detail: "Touch ID or your Mac password is needed before Astraea shows or changes your faces and stored password.")
+                                  detail: "Touch ID or your Mac password is needed before Astraea shows or changes your faces and stored password. Astraea asks once after you log in; after an update, macOS may also ask whether the new version can use the keychain key.")
                 } icon: {
                     Image(systemName: "lock.fill")
                 }

@@ -35,15 +35,32 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
-    var tint: Color {
+    /// The feature whose options this page holds, if it is one feature's
+    /// page. The one map between features and pages: the Features rows'
+    /// info buttons and these pages' tints both read it.
+    var feature: ModuleID? {
         switch self {
-        case .general: .gray
-        case .features: .blue
-        case .music: .pink
-        case .windowLayouts: .cyan
-        case .faceUnlock: .green
-        case .about: .indigo
+        case .music: "media"
+        case .windowLayouts: "window-layout"
+        case .about: "updates"
+        case .general, .features, .faceUnlock: nil
         }
+    }
+
+    /// A feature's page takes the feature's colour, so the sidebar and the
+    /// Features row can never disagree.
+    var tint: Color {
+        if let feature { return FeatureStyle.style(for: feature).tint }
+        switch self {
+        case .features: return .blue
+        case .faceUnlock: return .green
+        default: return .gray
+        }
+    }
+
+    /// The page holding a feature's own options, if it has one.
+    static func page(for feature: ModuleID) -> SettingsSection? {
+        allCases.first { $0.feature == feature }
     }
 
     /// The sidebar's groups, separated the way System Settings separates

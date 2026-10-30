@@ -36,9 +36,6 @@ struct AppVolumePageView: View {
     static let rowSpacing: CGFloat = 0
     /// Past this many rows the list stops growing and scrolls instead.
     static let maxVisibleRows = 8
-    /// The feature's tint, the one it wears in Settings (`FeatureStyle`).
-    static let tint: Color = .purple
-
     var body: some View {
         VStack(alignment: .leading, spacing: NotchStyle.Spacing.s) {
             header
@@ -52,11 +49,11 @@ struct AppVolumePageView: View {
     }
 
     private var header: some View {
-        NotchPageHeader(symbol: "speaker.wave.2.fill", title: "App Volume", tint: Self.tint) {
+        NotchPageHeader(symbol: "speaker.wave.2.fill", title: "App Volume") {
             let playing = service.mixerRows.filter(\.isPlaying).count
             if playing > 0 {
                 HStack(spacing: 5) {
-                    Circle().fill(Self.tint).frame(width: 6, height: 6)
+                    Circle().fill(NotchStyle.Ink.primary).frame(width: 6, height: 6)
                     Text("\(playing) playing")
                         .font(NotchStyle.Font.captionEmphasis)
                         .foregroundStyle(NotchStyle.Ink.secondary)
@@ -258,8 +255,8 @@ private struct MixerRowLabels: View {
                     .lineLimit(1)
                 if isPlaying {
                     Image(systemName: "waveform")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppVolumePageView.tint)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(NotchStyle.Ink.secondary)
                         .accessibilityHidden(true)
                 }
             }
@@ -272,41 +269,77 @@ private struct MixerRowLabels: View {
     }
 }
 
-/// A Control Center-style volume slider: a capsule track, a white fill
-/// that runs to a white knob the track's own height, so the level reads at
-/// a glance. Direct manipulation, so no animation to gate (hard rule 8).
+/// The row's volume slider. At rest a thin line in secondary ink, so a
+/// page of rows reads as levels rather than as a stack of white bars
+/// (user, 2026-10-29: "too bulky"). Under the pointer or in a drag it grows
+/// to a thicker track with a knob and the level above it; the grow is
+/// instant under Reduce Motion (hard rule 8). The 16pt hit strip never
+/// changes, so the row does not reflow and the slider is as easy to grab
+/// at rest. The fill-to-knob mapping is also the same in both states, so
+/// the level does not jump as the pointer arrives.
+///
 /// `centerMark` draws a notch at the middle, where a tap slider's unity
-/// sits. VoiceOver gets a real `Slider` through `accessibilityRepresentation`.
+/// sits. `readout` is the level as text, shown while active; nil hides it.
+/// VoiceOver gets a real `Slider` through `accessibilityRepresentation`.
 private struct MixerSlider: View {
     @Binding var value: Double
     var isEnabled = true
     var centerMark = false
+    var readout: String?
     var onEditingChanged: (Bool) -> Void = { _ in }
     @State private var editing = false
+    @State private var hovering = false
 
+    /// The hit strip's height, constant in both states.
     static let height: CGFloat = 16
+    private static let restingTrack: CGFloat = 4
+    private static let activeTrack: CGFloat = 8
+    /// The knob's diameter. Its travel is laid out at this size in both
+    /// states; at rest it is simply not drawn.
+    private static let knob: CGFloat = 12
+    /// How far above the track's centre the readout sits.
+    private static let readoutLift: CGFloat = 15
+
+    private var isActive: Bool { isEnabled && (hovering || editing) }
 
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let knob = Self.height
+            let knob = Self.knob
             let travel = max(width - knob, 1)
             let fraction = min(max(value, 0), 1)
-            let fill = knob + CGFloat(fraction) * travel
+            let knobCenter = knob / 2 + CGFloat(fraction) * travel
+            let track = isActive ? Self.activeTrack : Self.restingTrack
             ZStack(alignment: .leading) {
-                Capsule().fill(NotchStyle.Fill.selected)
-                Capsule().fill(NotchStyle.Ink.primary).frame(width: fill)
+                Capsule().fill(NotchStyle.Fill.selected).frame(height: track)
+                Capsule().fill(isActive ? NotchStyle.Ink.primary : NotchStyle.Ink.secondary)
+                    .frame(width: knobCenter, height: track)
                 if centerMark {
                     Capsule()
                         .fill(fraction >= 0.5 ? Color.black.opacity(0.25) : NotchStyle.Ink.quaternary)
-                        .frame(width: 2, height: 6)
+                        .frame(width: 2, height: track + 2)
                         .offset(x: width / 2 - 1)
                 }
                 Circle().fill(Color.white).frame(width: knob, height: knob)
                     .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
-                    .offset(x: fill - knob)
+                    .scaleEffect(isActive ? 1 : 0.4)
+                    .opacity(isActive ? 1 : 0)
+                    .offset(x: knobCenter - knob / 2)
+                if let readout {
+                    Text(readout)
+                        .font(NotchStyle.Font.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(NotchStyle.Ink.secondary)
+                        .fixedSize()
+                        .frame(width: 40)
+                        .offset(x: knobCenter - 20, y: -Self.readoutLift)
+                        .opacity(isActive ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
             }
+            .frame(height: Self.height)
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { drag in
                     guard isEnabled else { return }
@@ -320,6 +353,9 @@ private struct MixerSlider: View {
                 })
         }
         .frame(height: Self.height)
+        // Scoped to the state flip: the drag itself moves the fill
+        // directly, never under an animation.
+        .animation(NotchStyle.motion(.snappy(duration: 0.18)), value: isActive)
         .accessibilityRepresentation {
             Slider(value: $value, onEditingChanged: onEditingChanged)
                 .disabled(!isEnabled)
@@ -509,6 +545,7 @@ private struct TapVolumeSlider: View {
                             if !dragging { service.endTapVolumeEdit(for: ownerKey) }
                         }),
                     centerMark: true,
+                    readout: "\(TapReconciler.sliderValue(atPosition: position))",
                     onEditingChanged: { editing in
                         dragging = editing
                         if !editing { service.endTapVolumeEdit(for: ownerKey) }
@@ -534,6 +571,7 @@ private struct ScriptedVolumeSlider: View {
                         get: { Double(known ?? 100) / 100 },
                         set: { players.setVolume(PlayerVolume.value(atFraction: $0), for: bundleID) }),
                     isEnabled: known != nil,
+                    readout: known.map { "\($0)" },
                     onEditingChanged: { editing in
                         if editing {
                             players.beginVolumeEdit(for: bundleID)

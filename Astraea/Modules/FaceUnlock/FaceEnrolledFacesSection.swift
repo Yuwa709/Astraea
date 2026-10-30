@@ -19,7 +19,7 @@ struct FaceEnrolledFacesSection: View {
         } header: {
             Text("Enrolled Faces")
         } footer: {
-            SettingsFooter("Each face is stored as numbers, never as a picture, encrypted with a key in your login keychain. After an Astraea update, macOS may ask once whether the new version can use that key.")
+            SettingsFooter("Stored as numbers, never as pictures, encrypted with a key in your login keychain.")
         }
     }
 

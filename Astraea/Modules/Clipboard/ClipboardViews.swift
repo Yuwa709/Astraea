@@ -32,8 +32,7 @@ struct ClipboardExpandedView: View {
     }
 
     private var header: some View {
-        NotchPageHeader(symbol: "doc.on.clipboard.fill", title: "Clipboard",
-                        tint: .gray, subtitle: subtitle) {
+        NotchPageHeader(symbol: "doc.on.clipboard.fill", title: "Clipboard", subtitle: subtitle) {
             HStack(spacing: NotchStyle.Spacing.s) {
                 NotchSegmentedControl(selection: $filter, segments: [
                     .init(value: .text, label: "Text", symbol: "text.alignleft"),
@@ -136,7 +135,7 @@ private struct ClipboardTextRow: View {
         }
         .buttonStyle(NotchRowButtonStyle())
         .onHover { hovering = $0 }
-        .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: hovering)
+        .animation(NotchStyle.hoverMotion, value: hovering)
         .help("Copy back to the clipboard")
     }
 
@@ -175,7 +174,7 @@ private struct ClipboardImageCell: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: hovering)
+        .animation(NotchStyle.hoverMotion, value: hovering)
         .help("Copy back to the clipboard")
         .accessibilityLabel("Copied image")
     }

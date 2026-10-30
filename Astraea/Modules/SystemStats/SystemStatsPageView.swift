@@ -27,8 +27,8 @@ struct SystemStatsPageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchStyle.Spacing.m) {
-            // Same glyph and tint as the feature's switch in Settings.
-            NotchPageHeader(symbol: "cpu.fill", title: "System Stats", tint: .orange) {
+            // Same glyph as the feature's switch in Settings.
+            NotchPageHeader(symbol: "cpu.fill", title: "System Stats") {
                 if battery.snapshot?.isLowPowerMode == true { LowPowerBadge() }
             }
             BatteryOverviewCard(snapshot: battery.snapshot)

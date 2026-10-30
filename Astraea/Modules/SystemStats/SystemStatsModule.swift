@@ -109,7 +109,7 @@ struct SystemStatsExpandedView: View {
     let service: SystemStatsService
 
     var body: some View {
-        HStack(spacing: NotchStyle.Spacing.l + 2) {
+        HStack(spacing: NotchStyle.Spacing.l) {
             gauge("CPU", service.stats.cpuFraction)
             gauge("MEM", service.stats.memoryFraction)
             gauge("GPU", service.stats.gpuFraction)

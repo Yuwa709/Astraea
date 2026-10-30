@@ -14,13 +14,8 @@ struct WindowLayoutsSettingsTab: View {
     /// Observed so the rows re-render when a preference is written.
     @Bindable var settings: SettingsStore
 
-    private var isOn: Binding<Bool> {
-        let current = coordinator.moduleSummaries.first { $0.id == Self.id }?.isEnabled ?? false
-        return FeatureSwitch.binding(for: Self.id, current: current,
-                                     coordinator: coordinator, settings: settings)
-    }
-
     var body: some View {
+        let isOn = coordinator.enabledBinding(for: Self.id)
         let style = FeatureStyle.style(for: Self.id)
         Form {
             Section {

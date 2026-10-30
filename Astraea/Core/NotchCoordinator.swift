@@ -173,7 +173,7 @@ final class NotchCoordinator {
         self.caffeinate = caffeinate
         self.statsPage = statsPage
         self.appVolume = appVolume
-        Haptics.isEnabled = settings.settings.hapticsEnabled
+        Haptics.settings = settings
         self.arbiter = arbiter ?? NotchArbiter()
         self.arbiter.onPresentationChange = { [weak self] presentation in
             self?.presentationChanged(presentation)
@@ -244,6 +244,12 @@ final class NotchCoordinator {
         arbiter.registeredModules.map { ($0.id, $0.displayName, $0.isEnabled) }
     }
 
+    /// Whether a module is on, as Settings shows it. Read from the store, so
+    /// a view that reads it re-renders when the choice is written.
+    func isEnabled(_ id: ModuleID) -> Bool {
+        settings.isEnabled(id, default: arbiter.module(for: id)?.isEnabled ?? false)
+    }
+
     /// Toggles a module from Settings: persists the choice, updates the live
     /// module, and re-runs arbitration so the notch reflects it immediately.
     func setEnabled(_ enabled: Bool, for id: ModuleID) {
@@ -271,7 +277,6 @@ final class NotchCoordinator {
     /// From Settings. Applies to the next haptic.
     func setHapticsEnabled(_ enabled: Bool) {
         settings.update { $0.hapticsEnabled = enabled }
-        Haptics.isEnabled = enabled
         Self.logger.notice("Haptics \(enabled ? "on" : "off", privacy: .public)")
     }
 

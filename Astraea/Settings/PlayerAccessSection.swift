@@ -137,7 +137,7 @@ struct PlayerAccessSection: View {
                     .disabled(probing)
             }
         } footer: {
-            SettingsFooter("Astraea reads and controls Spotify and Music through Automation. No account needed.")
+            SettingsFooter("Controlled through Automation. No account needed.")
         }
         // On appear and on demand only. Never on a timer: an Automation
         // grant changes when the user changes it, and hard rule 9 forbids

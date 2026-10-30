@@ -66,10 +66,9 @@ struct FeaturesSettingsTab: View {
         Form {
             Section {
                 ForEach(features, id: \.id) { feature in
-                    let isOn = FeatureSwitch.binding(for: feature.id, current: feature.isEnabled,
-                                                     coordinator: coordinator, settings: settings)
+                    let isOn = coordinator.enabledBinding(for: feature.id)
                     FeatureRow(id: feature.id, name: feature.displayName, isOn: isOn,
-                               destination: Self.destination(for: feature.id), onOpen: onOpen)
+                               destination: SettingsSection.page(for: feature.id), onOpen: onOpen)
                     if feature.id == "app-volume", isOn.wrappedValue, let appVolume {
                         tapsToggle(appVolume)
                     }
@@ -79,16 +78,6 @@ struct FeaturesSettingsTab: View {
             }
         }
         .settingsPage()
-    }
-
-    /// The page holding a feature's own options, if it has one.
-    static func destination(for id: ModuleID) -> SettingsSection? {
-        switch id {
-        case "media": .music
-        case "window-layout": .windowLayouts
-        case "updates": .about
-        default: nil
-        }
     }
 
     /// Indented under App Volume, and only while it is on: it does nothing
@@ -113,16 +102,14 @@ struct FeaturesSettingsTab: View {
     }
 }
 
-/// One feature's switch, shared by Features and by a feature's own page so
-/// the two can never disagree about what turning it on does.
-@MainActor
-enum FeatureSwitch {
-    static func binding(for id: ModuleID, current: Bool,
-                        coordinator: NotchCoordinator, settings: SettingsStore) -> Binding<Bool> {
+extension NotchCoordinator {
+    /// One feature's switch, shared by Features and by a feature's own page
+    /// so the two can never disagree about what turning it on does.
+    func enabledBinding(for id: ModuleID) -> Binding<Bool> {
         Binding(
-            get: { settings.isEnabled(id, default: current) },
+            get: { self.isEnabled(id) },
             set: {
-                coordinator.setEnabled($0, for: id)
+                self.setEnabled($0, for: id)
                 // Moving windows needs Accessibility; ask at the toggle, the
                 // way the taps toggle asks for audio recording at its own.
                 if id == "window-layout", $0 { WindowLayoutModule.requestAccessibilityIfNeeded() }

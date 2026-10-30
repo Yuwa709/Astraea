@@ -329,10 +329,6 @@ private struct MediaPlayerHeader: View {
 /// The visualiser's denied path on the player: enabled but not capturing,
 /// which is almost always the System Audio Recording grant. Without it a
 /// refused grant would look exactly like the feature being off.
-///
-/// The same condition as `AudioVisualizerPermissionHint`, drawn here at the
-/// shared 10pt floor; that view's 8pt type is below it, and its file is not
-/// this one's to restyle.
 private struct MediaCaptureHint: View {
     let service: AudioVisualizerService
 
@@ -1040,7 +1036,7 @@ private struct MediaLyricsBadge: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: NotchStyle.Spacing.s + 2) {
+        HStack(alignment: .center, spacing: NotchStyle.Spacing.s) {
             Button { module.toggleFullLyrics() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .bold))

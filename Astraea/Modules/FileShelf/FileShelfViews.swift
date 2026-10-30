@@ -144,8 +144,7 @@ private struct ShelfHomeView: View {
     /// No clear-all control on purpose — one misclick emptying the whole
     /// shelf is the wrong failure mode; each tile removes itself instead.
     private var header: some View {
-        NotchPageHeader(symbol: "tray.full.fill", title: "File Shelf",
-                        tint: ShelfStyle.tint, subtitle: subtitle)
+        NotchPageHeader(symbol: "tray.full.fill", title: "File Shelf", subtitle: subtitle)
     }
 
     private var subtitle: String? {
@@ -326,7 +325,7 @@ private struct ShelfItem: View {
         .background(RoundedRectangle(cornerRadius: NotchStyle.Radius.row, style: .continuous)
             .fill(hovering ? NotchStyle.Fill.hover : .clear))
         .onHover { hovering = $0 }
-        .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: hovering)
+        .animation(NotchStyle.hoverMotion, value: hovering)
     }
 
     @ViewBuilder
