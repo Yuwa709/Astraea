@@ -33,7 +33,7 @@ struct GeneralSettingsTab: View {
                     .frame(maxWidth: 260)
                 } label: {
                     SettingsLabel("Hover delay",
-                                  detail: "How long the pointer rests on the notch before it opens.")
+                                  detail: "How long the pointer rests on the notch before it peeks out. It opens fully a moment later, or click it to open at once.")
                 }
                 Toggle(isOn: reopenLastPageBinding) {
                     SettingsLabel("Reopen last page",

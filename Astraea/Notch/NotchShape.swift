@@ -377,9 +377,11 @@ private struct RevealFromNotch: ViewModifier {
             .blur(radius: revealed || !enabled ? 0 : 14)
             .onAppear {
                 guard enabled, !revealed else { return }
-                // Faster than the panel's expand+settle (0.34s total), so
-                // content is locked in before the silhouette is.
-                withAnimation(.easeOut(duration: 0.17)) {
+                // About half the panel's grow+settle, so content is locked
+                // in before the silhouette is. Was 0.17 against a 0.34s
+                // open; the open is now gentler and longer, and this follows.
+                let open = NotchPanel.openGrowDuration + NotchPanel.openSettleDuration
+                withAnimation(.easeOut(duration: open * 0.5)) {
                     revealed = true
                 }
             }

@@ -26,6 +26,8 @@ final class NotchCoordinator {
     private var expiryTimer: Timer?
 
     private var isHovered = false
+    /// The first moments of a hover, before it opens: the panel peeks.
+    private var isPeeking = false
 
     /// True while another app's window is being dragged over the notch.
     /// Counts as hover: the button is held in that app, so the panel's own
@@ -209,8 +211,8 @@ final class NotchCoordinator {
         panel.onFileDragChange = { [weak self] active in
             self?.fileDragChanged(active)
         }
-        panel.onHoverChange = { [weak self] hovering in
-            self?.hoverChanged(hovering)
+        panel.onHoverStageChange = { [weak self] stage in
+            self?.hoverStageChanged(stage)
         }
         self.panel = panel
         reposition(reason: "launch")
@@ -302,6 +304,7 @@ final class NotchCoordinator {
         // its enter guard then refused to open the notch until the cursor
         // left and came back.
         isHovered = false
+        isPeeking = false
         panel.resetHover()
 
         guard let screen = ScreenPolicy.targetScreen() else {
@@ -341,9 +344,12 @@ final class NotchCoordinator {
 
     // MARK: - Presentation
 
-    private func hoverChanged(_ hovering: Bool) {
+    private func hoverStageChanged(_ stage: NotchHoverView.Stage) {
+        isPeeking = stage == .peek
+        let hovering = stage == .full
+        let opened = hovering && !isHovered
         isHovered = hovering
-        if hovering { reopenLastPageIfWanted() }
+        if opened { reopenLastPageIfWanted() }
         // Content depends on expansion, not just presentation: an expanded
         // notch shows each module's richer view.
         renderContent()
@@ -376,11 +382,21 @@ final class NotchCoordinator {
     /// here covers all of them; guarding at each trigger would mean nine
     /// checks and one of them eventually missed.
     private func desiredState() -> NotchPanel.State {
-        if Self.shouldExpand(isPinned: isPinned,
-                             isHovered: isHovered || isWindowDragOver,
-                             hasLiveActivity: isShowingLiveActivity) { return .expanded }
-        if standbyWings() != nil { return .compact }
-        return .idle
+        Self.state(expand: Self.shouldExpand(isPinned: isPinned,
+                                             isHovered: isHovered || isWindowDragOver,
+                                             hasLiveActivity: isShowingLiveActivity),
+                   isPeeking: isPeeking,
+                   hasWings: standbyWings() != nil)
+    }
+
+    /// The pure core of `desiredState`: open beats peek beats the resting
+    /// silhouette. A peek over the wings and one over the bare notch are the
+    /// same state; `applyState` tells the panel which it grows from.
+    nonisolated static func state(expand: Bool, isPeeking: Bool,
+                                  hasWings: Bool) -> NotchPanel.State {
+        if expand { return .expanded }
+        if isPeeking { return .peek }
+        return hasWings ? .compact : .idle
     }
 
     /// Factored out and `nonisolated` — the way `isInsideForExit` is — so the
@@ -547,7 +563,8 @@ final class NotchCoordinator {
         panel.setState(state, on: screen,
                        expandedContentSize: expandedContentSize,
                        chromeOnly: isChromeOnly,
-                       chromeGroups: chromeGroups)
+                       chromeGroups: chromeGroups,
+                       peekOverWings: state == .peek && standbyWings() != nil)
         lastAppliedState = state
         // Visibility follows what the panel now shows, not what the arbiter
         // presented: behind the collapsed wings or a navigated screen, the
@@ -736,7 +753,8 @@ final class NotchCoordinator {
                              reveal: entering,
                              topLeadingAccessory: leading,
                              topTrailingAccessory: trailing)
-        case .compact:
+        case .compact, .peek:
+            // A peek shows what it grew from: the wings, or nothing.
             isChromeOnly = false
             let wings = standbyWings()
             panel.setContent(nil, leadingWing: wings?.leading, trailingWing: wings?.trailing,

@@ -40,7 +40,14 @@ final class AppSettingsTests: XCTestCase {
         let settings = store().settings
         XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
         XCTAssertEqual(settings.moduleEnablement, [:])
-        XCTAssertEqual(settings.hoverEnterDelay, 0.35)
+        XCTAssertEqual(settings.hoverEnterDelay, AppSettings.defaultHoverEnterDelay)
+    }
+
+    func testStoredOldDefaultDelayIsKeptNotMovedToTheNewDefault() {
+        // 0.35 was the default before the peek (2026-10-29). Whoever has it
+        // stored keeps it: only the default moved.
+        write(#"{"schemaVersion":1,"hoverEnterDelay":0.35,"moduleEnablement":{}}"#)
+        XCTAssertEqual(store().settings.hoverEnterDelay, 0.35)
     }
 
     func testChangesPersistAcrossStoreInstances() {
@@ -55,7 +62,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testUnchangedUpdateDoesNotRewrite() {
         let subject = store()
-        subject.update { $0.hoverEnterDelay = 0.35 } // already the default
+        subject.update { $0.hoverEnterDelay = AppSettings.defaultHoverEnterDelay } // already the default
         XCTAssertNil(defaults.data(forKey: SettingsStore.storageKey))
     }
 
@@ -85,14 +92,14 @@ final class AppSettingsTests: XCTestCase {
         // key existed. The rest must survive.
         write(#"{"schemaVersion":1,"moduleEnablement":{"stats":false}}"#)
         let settings = store().settings
-        XCTAssertEqual(settings.hoverEnterDelay, 0.35)
+        XCTAssertEqual(settings.hoverEnterDelay, AppSettings.defaultHoverEnterDelay)
         XCTAssertEqual(settings.moduleEnablement["stats"], false)
     }
 
     func testMalformedValueForOneKeyDoesNotDiscardTheOthers() {
         write(#"{"schemaVersion":1,"hoverEnterDelay":"not a number","moduleEnablement":{"stats":false}}"#)
         let settings = store().settings
-        XCTAssertEqual(settings.hoverEnterDelay, 0.35, "bad value falls back")
+        XCTAssertEqual(settings.hoverEnterDelay, AppSettings.defaultHoverEnterDelay, "bad value falls back")
         XCTAssertEqual(settings.moduleEnablement["stats"], false, "good value survives")
     }
 

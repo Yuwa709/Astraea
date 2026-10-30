@@ -100,17 +100,17 @@ final class NotchPanel: NSPanel {
         )
     }
 
-    /// Seconds the cursor must dwell before hover reports true.
+    /// Seconds the cursor must dwell before the panel peeks; it opens fully
+    /// `NotchHoverView.peekHold` later.
     var hoverEnterDelay: TimeInterval {
-        get { (contentView as? NotchHoverView)?.enterDebounce ?? 0.35 }
+        get { (contentView as? NotchHoverView)?.enterDebounce ?? AppSettings.defaultHoverEnterDelay }
         set { (contentView as? NotchHoverView)?.enterDebounce = newValue }
     }
 
-    /// Debounced hover state from the tracking view. Task 7 wires
-    /// expand/collapse here.
-    var onHoverChange: ((Bool) -> Void)? {
-        get { (contentView as? NotchHoverView)?.onHoverChange }
-        set { (contentView as? NotchHoverView)?.onHoverChange = newValue }
+    /// Debounced hover stage from the tracking view: none, peek, or full.
+    var onHoverStageChange: ((NotchHoverView.Stage) -> Void)? {
+        get { (contentView as? NotchHoverView)?.onStageChange }
+        set { (contentView as? NotchHoverView)?.onStageChange = newValue }
     }
 
     /// True while the panel is the *source* of a drag. Set by AppDelegate
@@ -231,6 +231,10 @@ final class NotchPanel: NSPanel {
         /// playing" indicator. Costs menu bar coverage on both sides; that
         /// trade-off is deliberate and shared by every notch app.
         case compact
+        /// The first moments of a hover: the resting silhouette (bare notch
+        /// or wings) nudged a little outward and down, as a hint that the
+        /// notch is about to open. No content, no haptic.
+        case peek
         /// The open panel.
         case expanded
     }
@@ -262,6 +266,23 @@ final class NotchPanel: NSPanel {
     /// user-requested breathing room. The wing slots are inset by the same
     /// amount in the overlay, so widening this moves no content.
     nonisolated static let compactEdgeExtra: CGFloat = 2
+
+    /// The peek's growth past the resting silhouette: per side, and
+    /// downward. Small on purpose — it is a hint, not a panel.
+    nonisolated static let peekSideGrowth: CGFloat = 12
+    nonisolated static let peekDownGrowth: CGFloat = 6
+
+    /// The pure core of the peek frame: the resting frame, grown sideways
+    /// about its centre and downward from its top, which stays on the
+    /// screen edge.
+    nonisolated static func peekRect(resting: NSRect) -> NSRect {
+        NSRect(
+            x: resting.minX - peekSideGrowth,
+            y: resting.minY - peekDownGrowth,
+            width: resting.width + peekSideGrowth * 2,
+            height: resting.height + peekDownGrowth
+        )
+    }
 
     static func compactRect(on screen: NSScreen) -> NSRect {
         compactRect(housing: notchRect(on: screen))
@@ -373,12 +394,30 @@ final class NotchPanel: NSPanel {
 
     /// The close's timing, named so the silhouette can round its corners
     /// down on exactly the clock the window shrinks on
-    /// (`NotchOverlayView.collapseAnimation` reads these). The values are the
-    /// tuned originals, lifted out of the animation block below unchanged —
-    /// this names them, it does not retime anything.
-    nonisolated static let collapseDuration: TimeInterval = 0.22
+    /// (`NotchOverlayView.collapseAnimation` reads these). 0.28, up from the
+    /// original 0.22: the close read as the panel snapping shut (user,
+    /// 2026-10-29). Same curve.
+    nonisolated static let collapseDuration: TimeInterval = 0.28
     nonisolated static let collapseCurve: (x1: Float, y1: Float, x2: Float, y2: Float)
         = (0.30, 0.90, 0.55, 1.0)
+
+    /// The peek's timing, both ways: a quick soft ease-out, so it reads as a
+    /// nudge.
+    nonisolated static let peekDuration: TimeInterval = 0.18
+    nonisolated static let peekCurve: (x1: Float, y1: Float, x2: Float, y2: Float)
+        = (0.25, 0.80, 0.35, 1.0)
+
+    /// The opening, in two stages: out past the target by `openOvershoot`,
+    /// then settle. Gentler than the first version on every axis (user,
+    /// 2026-10-29: "too aggressive, the bounce too exaggerated"): the
+    /// overshoot is 1pt per side and 2pt down, from 4 and 5, and the growth
+    /// takes 0.30s, from 0.21, on a curve that decelerates rather than
+    /// launching. The content's reveal is timed against the total.
+    nonisolated static let openGrowDuration: TimeInterval = 0.30
+    nonisolated static let openSettleDuration: TimeInterval = 0.14
+    nonisolated static let openCurve: (x1: Float, y1: Float, x2: Float, y2: Float)
+        = (0.22, 0.80, 0.36, 1.0)
+    nonisolated static let openOvershoot = (side: CGFloat(1), down: CGFloat(2))
 
     /// Animates the panel frame to a state's rect. Resizes the panel itself,
     /// not the inner view — the hosting view and tracking area follow via
@@ -388,14 +427,21 @@ final class NotchPanel: NSPanel {
     /// against it: a resize can strand a stationary cursor outside the panel
     /// with no mouseExited to say so. See
     /// `NotchHoverView.reevaluateHoverAfterFrameChange`.
+    ///
+    /// `peekOverWings` says what a peek grows from: the compact wings when
+    /// they are showing, otherwise the bare notch.
     func setState(_ state: State, on screen: NSScreen,
                   expandedContentSize: CGSize = .zero,
                   chromeOnly: Bool = false,
-                  chromeGroups: ChromeGroupWidths = ChromeGroupWidths()) {
+                  chromeGroups: ChromeGroupWidths = ChromeGroupWidths(),
+                  peekOverWings: Bool = false) {
         let visible: NSRect
         switch state {
         case .idle: visible = Self.notchRect(on: screen)
         case .compact: visible = Self.compactRect(on: screen)
+        case .peek:
+            visible = Self.peekRect(resting: peekOverWings ? Self.compactRect(on: screen)
+                                                           : Self.notchRect(on: screen))
         case .expanded: visible = Self.expandedRect(on: screen, contentSize: expandedContentSize,
                                                     chromeOnly: chromeOnly, chromeGroups: chromeGroups)
         }
@@ -418,6 +464,7 @@ final class NotchPanel: NSPanel {
         }
 
         let wasExpanded = currentState == .expanded
+        let previousState = currentState
         currentState = state
         // The trackpad ticks as the notch snaps open — only on the way in,
         // and only when the hand is on the trackpad (the system's rule).
@@ -450,16 +497,17 @@ final class NotchPanel: NSPanel {
             // silently flattened — user never felt the bounce it promised).
             // The sideways component of the overshoot is what makes opening
             // read as blooming outward, not just dropping down.
-            // User-tuned subtle: half the first attempt's travel.
+            // Sizes and timing: see `openOvershoot` and its neighbours.
             var overshoot = target
-            overshoot.origin.x -= 4
-            overshoot.size.width += 8
-            overshoot.origin.y -= 5
-            overshoot.size.height += 5
+            overshoot.origin.x -= Self.openOvershoot.side
+            overshoot.size.width += Self.openOvershoot.side * 2
+            overshoot.origin.y -= Self.openOvershoot.down
+            overshoot.size.height += Self.openOvershoot.down
 
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.21
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.90, 0.45, 1.0)
+                context.duration = Self.openGrowDuration
+                let c = Self.openCurve
+                context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
                 self.animator().setFrame(overshoot, display: true)
             }, completionHandler: { [weak self] in
                 // AppKit invokes animation completions on the main thread;
@@ -472,7 +520,7 @@ final class NotchPanel: NSPanel {
                     // target now would drag the panel back to a stale frame.
                     guard let self, self.animationGeneration == generation else { return }
                     NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = 0.13
+                        context.duration = Self.openSettleDuration
                         context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                         self.animator().setFrame(target, display: true)
                     }, completionHandler: { [weak self] in
@@ -481,11 +529,14 @@ final class NotchPanel: NSPanel {
                 }
             })
         } else {
+            // Into or out of a peek takes the peek's own quick curve; a peek
+            // turning into the open panel took the branch above.
+            let peeking = state == .peek || previousState == .peek
             NSAnimationContext.runAnimationGroup({ context in
                 // Closing, wing transitions and expanded resizes ease out
                 // with no bounce so they read as tidy.
-                context.duration = Self.collapseDuration
-                let c = Self.collapseCurve
+                context.duration = peeking ? Self.peekDuration : Self.collapseDuration
+                let c = peeking ? Self.peekCurve : Self.collapseCurve
                 context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
                 animator().setFrame(target, display: true)
             }, completionHandler: { [weak self] in

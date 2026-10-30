@@ -45,9 +45,14 @@ struct AppSettings: Codable, Equatable {
     /// as disabled, so newly shipped modules can appear without a migration.
     var moduleEnablement: [ModuleID: Bool] = [:]
 
-    /// Seconds the cursor must dwell before the notch expands. User-tuned to
-    /// 0.35 on hardware; 0.2 let too much passing traffic through.
-    var hoverEnterDelay: TimeInterval = 0.35
+    /// Seconds the cursor must dwell before the notch peeks; it opens fully
+    /// `NotchHoverView.peekHold` after that. Was the dwell before the single-
+    /// stage open, user-tuned to 0.35 (0.2 let too much passing traffic
+    /// through). Since 2026-10-29 it times only the peek, a small hint, so
+    /// the default is shorter. A stored value is kept as the user set it —
+    /// only the default moved, so no schema bump.
+    nonisolated static let defaultHoverEnterDelay: TimeInterval = 0.15
+    var hoverEnterDelay: TimeInterval = AppSettings.defaultHoverEnterDelay
 
     /// Whether a hover reopens the notch on the page it was last closed on
     /// (clipboard, shelf, stats, app volume) rather than the home screen.
@@ -302,7 +307,7 @@ struct AppSettings: Codable, Equatable {
         moduleEnablement = (try? container.decode([ModuleID: LenientBool].self, forKey: .moduleEnablement))?
             .compactMapValues(\.value) ?? [:]
         hoverEnterDelay = (try? container.decode(TimeInterval.self, forKey: .hoverEnterDelay))
-            ?? 0.35
+            ?? AppSettings.defaultHoverEnterDelay
         // A v2/v3 payload still carries spotifyClientID. It has no CodingKey
         // any more, so it is ignored rather than throwing — the lenient
         // contract above already covers keys this version does not know.

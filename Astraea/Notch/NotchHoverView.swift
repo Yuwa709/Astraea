@@ -4,12 +4,17 @@ import os
 /// Fills the notch panel and reports debounced hover state, from the cursor
 /// or from a file drag.
 ///
-/// Entry is debounced: the cursor must dwell `enterDebounce` seconds before
-/// hover reports true, so passing traffic across the top of the screen does
-/// not trigger it. Exit is verified: the panel resizes underneath the cursor
-/// while animating, which makes AppKit fire spurious mouseExited events —
-/// an exit only counts if the cursor is really outside the panel frame
-/// `exitGrace` later.
+/// Entry is staged (user, 2026-10-29: the notch "flashes in and out" while
+/// working near the menu bar). After `enterDebounce` the stage becomes
+/// `.peek`, a small nudge outward; only if the cursor is still there
+/// `peekHold` later does it become `.full`, the open panel. A click during
+/// the peek skips straight to `.full`. A cursor that lingers briefly
+/// therefore only peeks, whatever the delay is set to.
+///
+/// Exit is verified: the panel resizes underneath the cursor while
+/// animating, which makes AppKit fire spurious mouseExited events — an exit
+/// only counts if the cursor is really outside the panel frame `exitGrace`
+/// later.
 ///
 /// A file drag opens the notch through exactly the same debounced path. A
 /// tracking area sees only the pointer, and during a drag session AppKit
@@ -23,26 +28,60 @@ final class NotchHoverView: NSView {
 
     private static let logger = Logger(subsystem: "com.techie.Astraea", category: "Hover")
 
-    /// User-tuned: 200ms let too much passing traffic through. Overridable
-    /// from settings via `NotchPanel.hoverEnterDelay`.
-    var enterDebounce: TimeInterval = 0.35
-    private static let exitGrace: TimeInterval = 0.1
+    /// How far into a hover the panel has gone.
+    enum Stage: String {
+        case none
+        /// The cursor has rested briefly: the panel nudges outward.
+        case peek
+        /// The cursor stayed, or clicked: the panel is open.
+        case full
+    }
 
-    /// Fires on every debounced state change.
-    var onHoverChange: ((Bool) -> Void)?
+    /// Seconds from entering to `.peek`: the hover delay setting, via
+    /// `NotchPanel.hoverEnterDelay`.
+    var enterDebounce: TimeInterval = 0.15
+
+    /// Seconds the peek holds before the panel opens fully. Fixed, not
+    /// derived from the setting: the first version opened at the setting
+    /// and peeked only if there was room before it, which at a short delay
+    /// meant never — the user's 0.1 skipped the peek entirely (2026-10-29).
+    nonisolated static let peekHold: TimeInterval = 0.4
+
+    /// Entering to `.full`, for a given hover delay.
+    nonisolated static func fullDelay(forEnterDelay enterDelay: TimeInterval) -> TimeInterval {
+        enterDelay + peekHold
+    }
+
+    /// A file drag skips the peek — the drop zones are only on the open
+    /// panel — and opens no later than this. 0.35 was user-tuned when the
+    /// open was single-stage.
+    nonisolated static let dragEnterCeiling: TimeInterval = 0.35
+
+    /// The original grace, for both stages. Lengthening it for the open
+    /// panel was tried and rejected (user, 2026-10-29): the peek is the fix
+    /// for the flashing, not a slower close.
+    nonisolated static let exitGrace: TimeInterval = 0.1
+
+    /// Fires on every stage change.
+    var onStageChange: ((Stage) -> Void)?
 
     /// Fires the instant a file drag arrives over the notch, and again when
     /// it leaves — ahead of the debounced expansion, so a listener can choose
     /// what the panel should open *to* before it opens.
     ///
-    /// Separate from `onHoverChange` on purpose: a pointer and a file
+    /// Separate from `onStageChange` on purpose: a pointer and a file
     /// arriving are different intents, and the panel should answer them
     /// differently. Folding this into the hover callback would make every
     /// listener re-derive which one happened.
     var onFileDragChange: ((Bool) -> Void)?
 
-    private var isHovering = false
-    private var pendingEnter: DispatchWorkItem?
+    private var stage: Stage = .none
+    private var pendingPeek: DispatchWorkItem?
+    private var pendingFull: DispatchWorkItem?
+    /// When the pending open was due. Kept through an exit that turns out
+    /// spurious — the peek's own growth fires one — so the open resumes on
+    /// its original schedule instead of restarting the dwell.
+    private var fullDeadline: DispatchTime?
     private var pendingExit: DispatchWorkItem?
     /// True between a file drag entering and leaving, so the exit path is
     /// only driven once per session however AppKit reports the ending.
@@ -136,18 +175,94 @@ final class NotchHoverView: NSView {
         // Re-entry cancels a pending exit — the cursor never really left.
         pendingExit?.cancel()
         pendingExit = nil
-        guard !isHovering else { return }
+        guard stage != .full, pendingFull == nil else { return }
 
-        pendingEnter?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.isHovering else { return }
-            self.isHovering = true
-            Self.logger.notice("\(fromDrag ? "Drag expanded the notch" : "Hover began", privacy: .public)")
-            self.onHoverChange?(true)
+        if fromDrag {
+            pendingPeek?.cancel()
+            pendingPeek = nil
+            scheduleFull(after: min(Self.fullDelay(forEnterDelay: enterDebounce),
+                                     Self.dragEnterCeiling), fromDrag: true)
+            return
         }
-        pendingEnter = work
+        guard stage == .none else {
+            // Back inside during the peek's exit grace: carry on to open
+            // when it was due, not from the start.
+            scheduleFull(after: remainingUntilFull(), fromDrag: false)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.stage == .none else { return }
+            self.pendingPeek = nil
+            self.setStage(.peek, reason: "Hover peek")
+        }
+        pendingPeek?.cancel()
+        pendingPeek = work
         DispatchQueue.main.asyncAfter(deadline: .now() + enterDebounce, execute: work)
+        scheduleFull(after: Self.fullDelay(forEnterDelay: enterDebounce), fromDrag: false)
     }
+
+    /// Time left until the open that was scheduled, or a whole peek hold if
+    /// none was.
+    private func remainingUntilFull() -> TimeInterval {
+        guard let fullDeadline else { return Self.peekHold }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let due = fullDeadline.uptimeNanoseconds
+        return due > now ? TimeInterval(due - now) / 1_000_000_000 : 0
+    }
+
+    private func scheduleFull(after delay: TimeInterval, fromDrag: Bool) {
+        pendingFull?.cancel()
+        fullDeadline = .now() + delay
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.stage != .full else { return }
+            self.openFully(reason: fromDrag ? "Drag expanded the notch" : "Hover began")
+        }
+        pendingFull = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func openFully(reason: String) {
+        pendingPeek?.cancel()
+        pendingPeek = nil
+        pendingFull?.cancel()
+        pendingFull = nil
+        setStage(.full, reason: reason)
+    }
+
+    private func setStage(_ next: Stage, reason: String) {
+        guard stage != next else { return }
+        stage = next
+        if next != .peek { fullDeadline = nil }
+        Self.logger.notice("\(reason, privacy: .public)")
+        onStageChange?(next)
+    }
+
+    // MARK: - Click to open
+
+    /// During the peek the whole panel is one target: a click opens it at
+    /// once, for anyone who does not want to wait out the dwell. Only then —
+    /// in every other stage the hosting view's own controls take clicks.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard stage == .peek else { return super.hitTest(point) }
+        // `point` is in the superview's coordinates, as `frame` is.
+        return frame.contains(point) ? self : nil
+    }
+
+    /// The panel is never key (hard rule 4), so without this the first
+    /// click would only be swallowed by AppKit as a window activation click.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard stage == .peek else {
+            super.mouseDown(with: event)
+            return
+        }
+        pendingExit?.cancel()
+        pendingExit = nil
+        openFully(reason: "Click opened the notch from its peek")
+    }
+
+    // MARK: - Exit
 
     override func mouseExited(with event: NSEvent) {
         beginExit()
@@ -158,15 +273,18 @@ final class NotchHoverView: NSView {
         // is the whole gesture, not a reason to close. The clear in
         // `isDraggingOut` runs this again once the session really ends.
         guard !isDraggingOut else { return }
-        pendingEnter?.cancel()
-        pendingEnter = nil
-        guard isHovering else { return }
+        pendingPeek?.cancel()
+        pendingPeek = nil
+        pendingFull?.cancel()
+        pendingFull = nil
+        guard stage != .none else { return }
 
         // Verify before collapsing: mid-animation resizes fire exits even
         // though the cursor is still over the panel.
         pendingExit?.cancel()
+        let leaving = stage
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isHovering, let window = self.window else { return }
+            guard let self, self.stage != .none, let window = self.window else { return }
             // The screen the panel is on; falling back to the panel's own top
             // still closes the exact-maxY case, which is the one that breaks.
             let screenTop = window.screen?.frame.maxY ?? window.frame.maxY
@@ -174,11 +292,12 @@ final class NotchHoverView: NSView {
                                         panel: window.frame,
                                         screenTop: screenTop) else {
                 Self.logger.debug("Spurious exit ignored; cursor still inside panel")
+                // Still inside a peek whose open was cancelled above: re-arm it.
+                if self.stage == .peek { self.beginEnter(fromDrag: false) }
                 return
             }
-            self.isHovering = false
-            Self.logger.notice("Hover ended")
-            self.onHoverChange?(false)
+            self.pendingExit = nil
+            self.setStage(.none, reason: leaving == .full ? "Hover ended" : "Peek ended")
         }
         pendingExit = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exitGrace, execute: work)
@@ -218,7 +337,7 @@ final class NotchHoverView: NSView {
         let inside = Self.isInsideForExit(mouse: NSEvent.mouseLocation,
                                           panel: window.frame,
                                           screenTop: screenTop)
-        switch (isHovering, inside) {
+        switch (stage != .none, inside) {
         case (true, false):
             Self.logger.notice("Frame changed under the cursor; cursor is outside the new frame, collapsing by the normal exit rules")
             beginExit()
@@ -231,24 +350,28 @@ final class NotchHoverView: NSView {
     }
 
     /// Forgets hover entirely, reporting nothing: cancels a pending enter or
-    /// exit and clears `isHovering`. The coordinator calls this through the
+    /// exit and clears `stage`. The coordinator calls this through the
     /// panel on a screen change, where it has already reset its own hover
-    /// flag. Without it `isHovering` stayed true, `beginEnter` early-returned
+    /// flag. Without it the stage stayed set, `beginEnter` early-returned
     /// on its guard, and the notch would not open again until the cursor
     /// left and re-entered.
     func resetHover() {
-        pendingEnter?.cancel()
-        pendingEnter = nil
+        pendingPeek?.cancel()
+        pendingPeek = nil
+        pendingFull?.cancel()
+        pendingFull = nil
         pendingExit?.cancel()
         pendingExit = nil
-        if isHovering {
-            isHovering = false
+        fullDeadline = nil
+        if stage != .none {
+            stage = .none
             Self.logger.notice("Hover reset by a screen change")
         }
     }
 
     deinit {
-        pendingEnter?.cancel()
+        pendingPeek?.cancel()
+        pendingFull?.cancel()
         pendingExit?.cancel()
     }
 
