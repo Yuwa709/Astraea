@@ -18,82 +18,78 @@ import SwiftUI
 /// (`BassBoostButton`). Neither changes the row height, so choosing an
 /// output or a boost never resizes the panel.
 ///
-/// Fixed 420pt content width, the clipboard page's, so the two doors read
-/// as one family. Height follows the row count up to eight rows, then the
-/// list scrolls: the panel's 460pt ceiling minus the neck and padding
-/// leaves ~388pt of content, and eight 40pt rows plus the header fill it.
+/// Laid out like Control Center's Sound module: the shared page header,
+/// then every app as one grouped card of 44pt rows divided by inset
+/// hairlines, each with a capsule slider. Fixed 420pt content width, the
+/// clipboard page's, so the two doors read as one family. Height follows
+/// the row count up to eight rows, then the list scrolls inside its card.
+/// Eight 44pt rows are 352pt; with the 22pt header and 8pt gap the page is
+/// 382pt, inside the panel's ~388pt of content under its 460pt ceiling.
 struct AppVolumePageView: View {
 
     var service: AppVolumeService
 
     static let contentWidth: CGFloat = 420
-    static let rowHeight: CGFloat = 40
-    static let rowSpacing: CGFloat = 6
+    /// Rows abut inside one card, separated by hairline overlays that take
+    /// no height, so `rowSpacing` is zero.
+    static let rowHeight: CGFloat = 44
+    static let rowSpacing: CGFloat = 0
     /// Past this many rows the list stops growing and scrolls instead.
     static let maxVisibleRows = 8
+    /// The feature's tint, the one it wears in Settings (`FeatureStyle`).
+    static let tint: Color = .purple
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NotchStyle.Spacing.s) {
             header
             if let warning = AppVolumeService.mixerConflictWarning(names: service.conflictingMixers) {
-                conflictBanner(warning)
+                MixerConflictBanner(warning: warning)
             }
             content
         }
         .frame(width: Self.contentWidth, alignment: .leading)
-        .foregroundStyle(.white)
+        .foregroundStyle(NotchStyle.Ink.primary)
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("APP VOLUME")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(0.5))
-            Spacer()
+        NotchPageHeader(symbol: "speaker.wave.2.fill", title: "App Volume", tint: Self.tint) {
             let playing = service.mixerRows.filter(\.isPlaying).count
             if playing > 0 {
-                Text("\(playing) playing")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.4))
+                HStack(spacing: 5) {
+                    Circle().fill(Self.tint).frame(width: 6, height: 6)
+                    Text("\(playing) playing")
+                        .font(NotchStyle.Font.captionEmphasis)
+                        .foregroundStyle(NotchStyle.Ink.secondary)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 20)
+                .background(Capsule().fill(NotchStyle.Fill.card))
+                .accessibilityElement(children: .combine)
             }
         }
-    }
-
-    /// Another mixer is running. Says what that does to the spectrum, not
-    /// merely that an app is open — a warning nobody can act on is noise.
-    /// Costs one row's worth of height, which `listHeight` gives back by
-    /// showing one row fewer, so the panel's ceiling is unchanged.
-    private func conflictBanner(_ warning: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9))
-            Text(warning)
-                .font(.system(size: 10))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(.orange.opacity(0.9))
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var content: some View {
         let rows = service.mixerRows
         if rows.isEmpty {
-            Text("Nothing has played audio yet")
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.4))
-                .frame(maxWidth: .infinity)
+            NotchEmptyState(symbol: "speaker.wave.2", message: "Nothing has played audio yet")
                 .frame(height: 88)
+                .notchCard(padding: 0)
         } else {
+            let shape = RoundedRectangle(cornerRadius: NotchStyle.Radius.card, style: .continuous)
             ScrollView(.vertical, showsIndicators: rows.count > Self.maxVisibleRows) {
                 LazyVStack(spacing: Self.rowSpacing) {
-                    ForEach(rows, id: \.owner.key) { row in
-                        MixerRowView(row: row, service: service)
+                    ForEach(Array(rows.enumerated()), id: \.element.owner.key) { index, row in
+                        MixerRowView(row: row, service: service, showsSeparator: index < rows.count - 1)
                     }
                 }
             }
             .frame(height: Self.listHeight(rowCount: rows.count,
                                            warningShown: !service.conflictingMixers.isEmpty))
+            .background(shape.fill(NotchStyle.Fill.card))
+            .clipShape(shape)
         }
     }
 
@@ -107,6 +103,41 @@ struct AppVolumePageView: View {
     }
 }
 
+/// Another mixer is running. Says what that does to the spectrum, not
+/// merely that an app is open — a warning nobody can act on is noise.
+/// Costs one row's worth of height, which `listHeight` gives back by showing
+/// one row fewer, so the panel's ceiling is unchanged.
+///
+/// Two lines at most: 7 rows plus header and gaps leave 42pt for the banner
+/// under the 388pt content budget, and two 10pt lines with this padding are
+/// ~34pt. One mixer's warning fits in two lines; a list of several names can
+/// truncate, so the full text stays on the tooltip and for VoiceOver.
+private struct MixerConflictBanner: View {
+    let warning: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(warning)
+                .font(NotchStyle.Font.footnote)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help(warning)
+        .accessibilityLabel(warning)
+        .foregroundStyle(Color.orange)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: NotchStyle.Radius.row, style: .continuous)
+            .fill(Color.orange.opacity(0.12)))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// One app's row: icon, name and state caption, and the slider. A never-tap
 /// row is greyed with its reason and a disabled slider — explained, not
 /// broken-looking. Non-scripted rows carry the tap engine's slider (Phase
@@ -114,10 +145,13 @@ struct AppVolumePageView: View {
 private struct MixerRowView: View {
     let row: MixerRow
     let service: AppVolumeService
+    let showsSeparator: Bool
 
-    /// Close to a never-tap row's whole-row 0.4, so every slider that does
-    /// nothing reads the same.
+    /// Every control that does nothing reads at this opacity.
     static let inertSliderOpacity: Double = 0.45
+    /// Where the hairline starts: the row's 12pt inset, the 24pt icon and
+    /// its 10pt gap, so it lines up under the name as in a grouped list.
+    private static let separatorInset: CGFloat = 46
 
     /// The player that owns this row's volume, when it is Spotify or Music
     /// and the media module is on. Nil means the tap-engine path.
@@ -132,6 +166,8 @@ private struct MixerRowView: View {
         return nil
     }
 
+    private var isNeverTap: Bool { row.neverTapReason != nil }
+
     /// Routing and boost both need a tap, so both need taps on and the
     /// capture grant. Either control still shows its saved choice while
     /// disabled.
@@ -142,48 +178,50 @@ private struct MixerRowView: View {
     var body: some View {
         HStack(spacing: 10) {
             AppIconView(owner: row.owner)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(row.owner.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Text(caption)
-                    .font(.system(size: 9))
-                    .foregroundStyle(captionColor)
-                    .lineLimit(1)
-            }
-            .frame(width: 150, alignment: .leading)
-            if let scriptedPlayer {
-                ScriptedVolumeSlider(bundleID: row.owner.key, players: scriptedPlayer)
-            } else if row.neverTapReason == nil, service.tapsEnabled, engineReason == nil,
-                      !AppVolumeService.scriptedPlayerKeys.contains(row.owner.key) {
-                // The identity check keeps Spotify and Music off the tap
-                // path even while the Media module (their slider's owner)
-                // is disabled: their row goes inert, never to a tap.
-                TapVolumeSlider(ownerKey: row.owner.key, service: service)
-            } else {
-                // Dimmed and disabled: never-tap, taps off, or an engine
-                // reason the caption explains. A never-tap row is already
-                // dimmed whole, so its slider takes no second dimming.
-                Slider(value: .constant(1.0))
-                    .controlSize(.small)
-                    .disabled(true)
-                    .opacity(row.neverTapReason == nil ? Self.inertSliderOpacity : 1)
-                    .accessibilityHidden(true)
-            }
+                .opacity(isNeverTap ? 0.4 : 1)
+            MixerRowLabels(name: row.owner.name, caption: caption, captionColor: captionColor,
+                           isPlaying: row.isPlaying, isGreyed: isNeverTap)
+                .frame(width: 136, alignment: .leading)
+            slider
             // Never-tap apps are never tapped, so they cannot be routed or
             // boosted.
-            if row.neverTapReason == nil {
-                HStack(spacing: 4) {
+            if !isNeverTap {
+                HStack(spacing: 0) {
                     BassBoostButton(ownerKey: row.owner.key, service: service,
                                     isEnabled: Self.tapControlsEnabled(row, service: service))
                     OutputMenu(row: row, service: service, route: route)
                 }
             }
         }
+        .padding(.horizontal, 12)
         .frame(height: AppVolumePageView.rowHeight)
-        .opacity(row.neverTapReason == nil ? 1 : 0.4)
+        .overlay(alignment: .bottom) {
+            if showsSeparator {
+                Rectangle().fill(NotchStyle.Fill.separator).frame(height: 1)
+                    .padding(.leading, Self.separatorInset)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(row.owner.name), \(caption)")
+    }
+
+    @ViewBuilder
+    private var slider: some View {
+        if let scriptedPlayer {
+            ScriptedVolumeSlider(bundleID: row.owner.key, players: scriptedPlayer)
+        } else if !isNeverTap, service.tapsEnabled, engineReason == nil,
+                  !AppVolumeService.scriptedPlayerKeys.contains(row.owner.key) {
+            // The identity check keeps Spotify and Music off the tap path
+            // even while the Media module (their slider's owner) is
+            // disabled: their row goes inert, never to a tap.
+            TapVolumeSlider(ownerKey: row.owner.key, service: service)
+        } else {
+            // Dimmed and disabled: never-tap, taps off, or an engine reason
+            // the caption explains.
+            MixerSlider(value: .constant(1.0), isEnabled: false)
+                .opacity(Self.inertSliderOpacity)
+                .accessibilityHidden(true)
+        }
     }
 
     private var route: OutputRoute { service.route(for: row.owner.key) }
@@ -196,8 +234,96 @@ private struct MixerRowView: View {
 
     /// An unplugged choice is the one caption that needs noticing.
     private var captionColor: Color {
-        if case .disconnected = route { return .orange.opacity(0.9) }
-        return .white.opacity(0.45)
+        if case .disconnected = route { return .orange }
+        return NotchStyle.Ink.tertiary
+    }
+}
+
+/// The row's name over its state caption, with a small tinted waveform
+/// after the name while the app is playing. A greyed (never-tap) row drops
+/// its name to the tertiary ink, the dimmest text may go.
+private struct MixerRowLabels: View {
+    let name: String
+    let caption: String
+    let captionColor: Color
+    let isPlaying: Bool
+    let isGreyed: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Text(name)
+                    .font(NotchStyle.Font.bodyEmphasis)
+                    .foregroundStyle(isGreyed ? NotchStyle.Ink.tertiary : NotchStyle.Ink.primary)
+                    .lineLimit(1)
+                if isPlaying {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(AppVolumePageView.tint)
+                        .accessibilityHidden(true)
+                }
+            }
+            Text(caption)
+                .font(NotchStyle.Font.footnote)
+                .foregroundStyle(isGreyed ? NotchStyle.Ink.tertiary : captionColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+}
+
+/// A Control Center-style volume slider: a capsule track, a white fill
+/// that runs to a white knob the track's own height, so the level reads at
+/// a glance. Direct manipulation, so no animation to gate (hard rule 8).
+/// `centerMark` draws a notch at the middle, where a tap slider's unity
+/// sits. VoiceOver gets a real `Slider` through `accessibilityRepresentation`.
+private struct MixerSlider: View {
+    @Binding var value: Double
+    var isEnabled = true
+    var centerMark = false
+    var onEditingChanged: (Bool) -> Void = { _ in }
+    @State private var editing = false
+
+    static let height: CGFloat = 16
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let knob = Self.height
+            let travel = max(width - knob, 1)
+            let fraction = min(max(value, 0), 1)
+            let fill = knob + CGFloat(fraction) * travel
+            ZStack(alignment: .leading) {
+                Capsule().fill(NotchStyle.Fill.selected)
+                Capsule().fill(NotchStyle.Ink.primary).frame(width: fill)
+                if centerMark {
+                    Capsule()
+                        .fill(fraction >= 0.5 ? Color.black.opacity(0.25) : NotchStyle.Ink.quaternary)
+                        .frame(width: 2, height: 6)
+                        .offset(x: width / 2 - 1)
+                }
+                Circle().fill(Color.white).frame(width: knob, height: knob)
+                    .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
+                    .offset(x: fill - knob)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    guard isEnabled else { return }
+                    if !editing { editing = true; onEditingChanged(true) }
+                    value = Double(min(max((drag.location.x - knob / 2) / travel, 0), 1))
+                }
+                .onEnded { _ in
+                    guard editing else { return }
+                    editing = false
+                    onEditingChanged(false)
+                })
+        }
+        .frame(height: Self.height)
+        .accessibilityRepresentation {
+            Slider(value: $value, onEditingChanged: onEditingChanged)
+                .disabled(!isEnabled)
+        }
     }
 }
 
@@ -235,11 +361,9 @@ private struct OutputMenu: View {
             Image(systemName: route == .systemDefault ? "hifispeaker" : "hifispeaker.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(glyphColor)
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(NotchIconButtonStyle(size: 26))
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(!isEnabled)
@@ -250,9 +374,9 @@ private struct OutputMenu: View {
 
     private var glyphColor: Color {
         switch route {
-        case .systemDefault: return .white.opacity(0.55)
-        case .device: return .white.opacity(0.9)
-        case .disconnected: return .orange.opacity(0.9)
+        case .systemDefault: return NotchStyle.Ink.secondary
+        case .device: return NotchStyle.Ink.primary
+        case .disconnected: return .orange
         }
     }
 
@@ -281,19 +405,14 @@ private struct OutputMenu: View {
 ///
 /// The stack draws 9.75 × 12 pt of ink, the speaker glyph's own size at
 /// the output menu's 11 pt (measured from the rendered symbol, 2026-09-28),
-/// so the two read as a pair. In a 20×20 frame, the output menu's, so the
-/// row keeps its height. The lighting
-/// change fades briefly, and is instant under Reduce Motion (hard rule 8).
-/// Disabled with the output menu (taps off, no capture grant), but still
-/// showing the saved level.
+/// so the two read as a pair; both sit in the same 26pt icon-button circle,
+/// inside the fixed row height. The lighting change fades briefly, and is
+/// instant under Reduce Motion (hard rule 8). Disabled with the output menu
+/// (taps off, no capture grant), but still showing the saved level.
 private struct BassBoostButton: View {
     let ownerKey: String
     let service: AppVolumeService
     let isEnabled: Bool
-
-    private var reduceMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
 
     var body: some View {
         let level = service.bass(for: ownerKey)
@@ -305,14 +424,12 @@ private struct BassBoostButton: View {
                     Chevron()
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 8.25, height: 2)
-                        .foregroundStyle(.white.opacity(rank <= level ? 0.95 : 0.28))
+                        .foregroundStyle(rank <= level ? NotchStyle.Ink.primary : NotchStyle.Ink.quaternary)
                 }
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
-            .frame(width: 20, height: 20)
-            .contentShape(Rectangle())
+            .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: level)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchIconButtonStyle(size: 26))
         .overlay(RightClickCatcher { if isEnabled { service.setBass(0, for: ownerKey) } })
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : MixerRowView.inertSliderOpacity)
@@ -366,10 +483,11 @@ private struct RightClickCatcher: NSViewRepresentable {
 
 /// The tap engine's slider: the position applies live while dragging (the
 /// engine ramps each change) and persists on release — the app's own
-/// volume is stored as absence. The middle is the app's own volume and the
-/// right end twice it (`TapReconciler.maxPosition`); near the middle the
-/// knob snaps onto it. Usable on a row that is not playing: the position
-/// is remembered and applies the moment the app next outputs.
+/// volume is stored as absence. The middle is the app's own volume, marked
+/// on the track, and the right end twice it (`TapReconciler.maxPosition`);
+/// near the middle the knob snaps onto it. Usable on a row that is not
+/// playing: the position is remembered and applies the moment the app
+/// next outputs.
 private struct TapVolumeSlider: View {
     let ownerKey: String
     let service: AppVolumeService
@@ -384,17 +502,17 @@ private struct TapVolumeSlider: View {
         // returns, so a captured constant would pin it in place even once
         // the row re-renders.
         let position = service.tapPosition(for: ownerKey)
-        Slider(value: Binding(
-                   get: { Double(service.tapPosition(for: ownerKey)) / Double(TapReconciler.maxPosition) },
-                   set: {
-                       service.setTapPosition(TapReconciler.position(atFraction: $0), for: ownerKey)
-                       if !dragging { service.endTapVolumeEdit(for: ownerKey) }
-                   }),
-               onEditingChanged: { editing in
-                   dragging = editing
-                   if !editing { service.endTapVolumeEdit(for: ownerKey) }
-               })
-            .controlSize(.small)
+        MixerSlider(value: Binding(
+                        get: { Double(service.tapPosition(for: ownerKey)) / Double(TapReconciler.maxPosition) },
+                        set: {
+                            service.setTapPosition(TapReconciler.position(atFraction: $0), for: ownerKey)
+                            if !dragging { service.endTapVolumeEdit(for: ownerKey) }
+                        }),
+                    centerMark: true,
+                    onEditingChanged: { editing in
+                        dragging = editing
+                        if !editing { service.endTapVolumeEdit(for: ownerKey) }
+                    })
             .accessibilityLabel("Volume")
             .accessibilityValue("\(TapReconciler.sliderValue(atPosition: position)) percent")
     }
@@ -412,24 +530,24 @@ private struct ScriptedVolumeSlider: View {
 
     var body: some View {
         let known = players.volume(for: bundleID)
-        Slider(value: Binding(
-                   get: { Double(known ?? 100) / 100 },
-                   set: { players.setVolume(PlayerVolume.value(atFraction: $0), for: bundleID) }),
-               onEditingChanged: { editing in
-                   if editing {
-                       players.beginVolumeEdit(for: bundleID)
-                   } else {
-                       players.endVolumeEdit(for: bundleID)
-                   }
-               })
-            .controlSize(.small)
-            .disabled(known == nil)
+        MixerSlider(value: Binding(
+                        get: { Double(known ?? 100) / 100 },
+                        set: { players.setVolume(PlayerVolume.value(atFraction: $0), for: bundleID) }),
+                    isEnabled: known != nil,
+                    onEditingChanged: { editing in
+                        if editing {
+                            players.beginVolumeEdit(for: bundleID)
+                        } else {
+                            players.endVolumeEdit(for: bundleID)
+                        }
+                    })
+            .opacity(known == nil ? MixerRowView.inertSliderOpacity : 1)
             .accessibilityLabel("Volume")
             .accessibilityValue(known.map { "\($0) percent" } ?? "Unknown")
     }
 }
 
-/// The row's 20pt icon: the app's own icon where the owner is an app, a
+/// The row's 24pt icon: the app's own icon where the owner is an app, a
 /// globe for web content, a generic glyph for unbundled tools.
 private struct AppIconView: View {
     let owner: AudioOwner
@@ -442,11 +560,12 @@ private struct AppIconView: View {
                     .scaledToFit()
             } else {
                 Image(systemName: owner.kind == .webContent ? "globe" : "app.dashed")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(.system(size: 16))
+                    .foregroundStyle(NotchStyle.Ink.secondary)
             }
         }
-        .frame(width: 20, height: 20)
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }
 

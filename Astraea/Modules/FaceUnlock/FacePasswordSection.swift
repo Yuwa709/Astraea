@@ -21,26 +21,32 @@ struct FacePasswordSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Status") {
-                Label(isStored ? "Stored, encrypted" : "Not set",
-                      systemImage: isStored ? "lock.fill" : "minus.circle")
+            LabeledContent {
+                buttons
+            } label: {
+                Label {
+                    SettingsLabel("Mac password", detail: isStored ? "Stored, encrypted" : "Not set")
+                } icon: {
+                    Image(systemName: isStored ? "lock.fill" : "minus.circle")
+                }
             }
-            buttons
             if let removeError {
-                Text(removeError).font(.caption).foregroundStyle(.red)
+                SettingsNote(text: removeError, symbol: "xmark.octagon.fill", tint: .red)
             }
         } header: {
             Text("Mac Password")
         } footer: {
-            Text("With \u{201C}Unlock the Mac at the lock screen\u{201D} on, Face Unlock types this password for you when it recognises you there.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SettingsFooter("With \u{201C}Unlock the Mac at the lock screen\u{201D} on, Face Unlock types this password for you when it recognises you there.")
         }
     }
 
     /// One view, so the sheet and the confirmation hang off a single anchor.
     private var buttons: some View {
-        HStack {
+        HStack(spacing: 8) {
+            if isStored {
+                Button("Remove Password…", role: .destructive) { confirmRemove = true }
+                    .disabled(session.state == .unlocking)
+            }
             Button(isStored ? "Change Password…" : "Set Password…") {
                 Task {
                     guard await requireKey() else { return }
@@ -50,11 +56,6 @@ struct FacePasswordSection: View {
             }
             // Needs the key: no new one is minted over data whose key is gone.
             .disabled(session.state == .unlocking || session.state == .keyMissing)
-            Spacer()
-            if isStored {
-                Button("Remove Password…", role: .destructive) { confirmRemove = true }
-                    .disabled(session.state == .unlocking)
-            }
         }
         .sheet(isPresented: $showingSheet) {
             FacePasswordSheet(passwordStore: passwordStore, isChange: sheetIsChange) {

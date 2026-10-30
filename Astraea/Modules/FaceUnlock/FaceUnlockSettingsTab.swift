@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Settings → Face Unlock: the session, enrolled faces, the stored Mac
-/// password, and unlocking the Mac with them at the lock screen.
+/// Settings → Face Unlock: unlocking the Mac at the lock screen and what it
+/// needs, the session, enrolled faces, the stored Mac password, and how
+/// strict recognition is.
 ///
 /// Opening the page never prompts. The owner check (Touch ID or the Mac
 /// password) runs only from a control that needs it; with the session
@@ -25,6 +26,12 @@ struct FaceUnlockSettingsTab: View {
 
     var body: some View {
         Form {
+            // The main switch first, then what it needs, then the data it
+            // uses, then how strict it is, then its limits.
+            FaceLockScreenSection(settings: settings, coordinator: coordinator, gate: gate)
+            if let coordinator {
+                FaceLockScreenPermissionsSection(coordinator: coordinator)
+            }
             FaceSessionSection(session: session, settings: settings, gate: gate,
                                hasEncryptedData: hasEncryptedData,
                                onUnlock: { Task { await store.unlock() } })
@@ -36,11 +43,10 @@ struct FaceUnlockSettingsTab: View {
                                      onDeleteAll: { confirmDeleteAll = true })
             FacePasswordSection(passwordStore: passwordStore, session: session,
                                 requireKey: { await gate.requireKeyAndFreshOwner(reason: "change the Mac password Face Unlock types") })
-            FaceLockScreenSection(settings: settings, coordinator: coordinator, gate: gate)
+            FaceMatchingSection(settings: settings, gate: gate)
             FaceUnlockWarningSection()
         }
-        .formStyle(.grouped)
-        .padding()
+        .settingsPage()
         // Never prompts: loads the faces only when the owner is already
         // verified (unlocked earlier, or just now by a button).
         .task(id: session.state) {

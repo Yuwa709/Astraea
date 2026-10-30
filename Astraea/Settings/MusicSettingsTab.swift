@@ -18,8 +18,11 @@ struct MusicSettingsTab: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Show a live spectrum", isOn: visualizerBinding)
+            Section("Visualizer") {
+                Toggle(isOn: visualizerBinding) {
+                    SettingsLabel("Show a live spectrum",
+                                  detail: "Needs System Audio Recording: System Settings → Privacy & Security → Screen & System Audio Recording.")
+                }
                 // Another mixer re-rendering audio is the one thing that
                 // makes this drawing wrong in a way the user cannot see is
                 // wrong, so it is stated here, beside the switch that turns
@@ -28,10 +31,6 @@ struct MusicSettingsTab: View {
                     names: appVolume?.conflictingMixers ?? []) {
                     MixerConflictWarning(warning: warning)
                 }
-            } header: {
-                Text("Visualizer")
-            } footer: {
-                SettingsFooter("Needs System Audio Recording: System Settings → Privacy & Security → Screen & System Audio Recording.")
             }
 
             PlayerAccessSection()
@@ -43,17 +42,15 @@ struct MusicSettingsTab: View {
             // schema field are untouched, so the choice already made comes
             // back with the section when the source ships.
             if SystemMediaAdapter.isRegistered {
-                Section {
-                    Toggle("Prefer music over video", isOn: musicOverVideoBinding)
-                } header: {
-                    Text("Other Players")
-                } footer: {
-                    SettingsFooter("For browsers and other players without their own integration: keeps a song from flickering into looking like a video. Spotify and Music always take priority.")
+                Section("Other Players") {
+                    Toggle(isOn: musicOverVideoBinding) {
+                        SettingsLabel("Prefer music over video",
+                                      detail: "For browsers and other players without their own integration: keeps a song from flickering into looking like a video. Spotify and Music always take priority.")
+                    }
                 }
             }
         }
-        .formStyle(.grouped)
-        .padding()
+        .settingsPage()
     }
 
     /// Persists the choice and applies it to the live source in one place,

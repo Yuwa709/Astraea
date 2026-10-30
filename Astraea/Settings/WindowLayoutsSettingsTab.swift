@@ -1,15 +1,72 @@
 import SwiftUI
 
-/// Which layouts the window layout picker offers: the built-ins, each of
-/// which can be hidden, and layouts the user draws themselves. Rows on the
-/// Features page, indented under the Window Layouts switch and shown only
-/// while it is on, the way App Volume's taps toggle is.
+/// Settings → Window Layouts: the feature's switch, then which layouts the
+/// window layout picker offers — the built-ins, each of which can be
+/// hidden, and layouts the user draws themselves.
 ///
 /// Edits apply on the next drag. The picker reads its presets as a drag
 /// begins, so nothing here changes a picker that is open.
-struct WindowLayoutsOptions: View {
+struct WindowLayoutsSettingsTab: View {
 
+    private static let id: ModuleID = "window-layout"
+
+    let coordinator: NotchCoordinator
     /// Observed so the rows re-render when a preference is written.
+    @Bindable var settings: SettingsStore
+
+    private var isOn: Binding<Bool> {
+        let current = coordinator.moduleSummaries.first { $0.id == Self.id }?.isEnabled ?? false
+        return FeatureSwitch.binding(for: Self.id, current: current,
+                                     coordinator: coordinator, settings: settings)
+    }
+
+    var body: some View {
+        let style = FeatureStyle.style(for: Self.id)
+        Form {
+            Section {
+                Toggle(isOn: isOn) {
+                    SettingsRowLabel(title: "Window Layouts", symbol: style.symbol,
+                                     tint: style.tint, detail: style.summary)
+                }
+            }
+            BuiltInLayoutsSection(settings: settings)
+            CustomLayoutsSection(settings: settings)
+        }
+        .settingsPage()
+    }
+}
+
+/// The built-in layouts, each with a switch to keep it out of the picker.
+/// The last one shown cannot be switched off.
+private struct BuiltInLayoutsSection: View {
+
+    @Bindable var settings: SettingsStore
+
+    private var layouts: AppSettings.WindowLayouts { settings.settings.windowLayouts }
+    private var hidden: Set<String> { Set(layouts.hiddenBuiltIns ?? []) }
+
+    var body: some View {
+        Section {
+            ForEach(LayoutPreset.builtIn) { preset in
+                Toggle(isOn: shownBinding(preset.id)) { LayoutRowLabel(preset: preset) }
+                    .disabled(layouts.isOnlyVisible(preset.id))
+            }
+        } header: {
+            Text("Built-in Layouts")
+        } footer: {
+            SettingsFooter("Switch a layout off to keep it out of the picker.")
+        }
+    }
+
+    private func shownBinding(_ id: String) -> Binding<Bool> {
+        Binding(get: { !hidden.contains(id) },
+                set: { shown in settings.update { $0.windowLayouts.setBuiltIn(id, shown: shown) } })
+    }
+}
+
+/// Layouts drawn on a grid, shown in the picker after the built-ins.
+private struct CustomLayoutsSection: View {
+
     @Bindable var settings: SettingsStore
 
     @State private var editing: CustomLayout?
@@ -17,28 +74,28 @@ struct WindowLayoutsOptions: View {
 
     private var layouts: AppSettings.WindowLayouts { settings.settings.windowLayouts }
     private var custom: [CustomLayout] { layouts.custom ?? [] }
-    private var hidden: Set<String> { Set(layouts.hiddenBuiltIns ?? []) }
 
-    /// Several rows, not one: the form draws each as its own row with its
-    /// switch at the trailing edge. The sheet and the dialog hang off the
-    /// last row only, so each is attached once.
     var body: some View {
-        Group {
-            ForEach(LayoutPreset.builtIn) { preset in
-                Toggle(isOn: shownBinding(preset.id)) { LayoutRowLabel(preset: preset) }
-                    .disabled(isOnlyVisible(preset.id))
-            }
+        Section {
             ForEach(custom) { layout in customRow(layout) }
             addRow
+        } header: {
+            Text("Custom Layouts")
+        } footer: {
+            SettingsFooter("Draw your own zones on a grid: up to \(CustomLayout.maxCount) layouts, shown after the built-ins.")
         }
-        .padding(.leading, 30)
     }
 
+    /// The sheet and the dialog hang off this row only, so each is
+    /// attached once.
     private var addRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack {
+            if custom.isEmpty {
+                Text("No custom layouts.").foregroundStyle(.secondary)
+            }
+            Spacer()
             Button("Add Layout…") { editing = CustomLayout(name: layouts.nextLayoutName) }
                 .disabled(custom.count >= CustomLayout.maxCount)
-            SettingsFooter("Switch a layout off to keep it out of the picker. Draw your own zones on a grid: up to \(CustomLayout.maxCount) layouts, shown after the built-ins.")
         }
         .sheet(item: $editing) { layout in
             LayoutEditorSheet(layout: layout, isNew: !custom.contains { $0.id == layout.id },
@@ -63,13 +120,8 @@ struct WindowLayoutsOptions: View {
             .buttonStyle(.borderless)
             .help("Delete")
             .accessibilityLabel("Delete \(layout.name)")
-            .disabled(isOnlyVisible(layout.presetID))
+            .disabled(layouts.isOnlyVisible(layout.presetID))
         }
-    }
-
-    private func shownBinding(_ id: String) -> Binding<Bool> {
-        Binding(get: { !hidden.contains(id) },
-                set: { shown in settings.update { $0.windowLayouts.setBuiltIn(id, shown: shown) } })
     }
 
     private func save(_ layout: CustomLayout) {
@@ -78,10 +130,6 @@ struct WindowLayoutsOptions: View {
 
     private func delete(_ layout: CustomLayout) {
         settings.update { $0.windowLayouts.delete(layout.id) }
-    }
-
-    private func isOnlyVisible(_ presetID: String) -> Bool {
-        layouts.isOnlyVisible(presetID)
     }
 
     private var isConfirmingDelete: Binding<Bool> {

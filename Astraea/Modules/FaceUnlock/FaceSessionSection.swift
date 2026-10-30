@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings → Face Unlock → Session: whether the key is in memory, the way
+/// Settings → Face Unlock → Access (the session): whether the key is in memory, the way
 /// to unlock or lock it, and how long it may sit unused.
 ///
 /// Nothing here prompts on its own. The owner check runs only from the
@@ -18,25 +18,20 @@ struct FaceSessionSection: View {
         Section {
             status
             if session.state == .keyMissing {
-                Label {
-                    Text(FaceUnlockSession.keyMissingMessage).font(.caption)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                }
+                SettingsNote(text: FaceUnlockSession.keyMissingMessage)
             } else if session.state == .locked, let error = session.lastError {
-                Text("Not unlocked: \(error)")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                SettingsNote(text: "Not unlocked: \(error)", symbol: "xmark.octagon.fill", tint: .red)
             }
-            Picker("Auto-lock after", selection: interval) {
+            Picker(selection: interval) {
                 ForEach(AutoLockInterval.allCases) { Text($0.title).tag($0) }
+            } label: {
+                SettingsLabel("Auto-lock after",
+                              detail: "After this long without use, Face Unlock locks and needs Touch ID or your password again.")
             }
         } header: {
-            Text("Session")
+            Text("Access")
         } footer: {
-            Text("After this long without use, Face Unlock locks and needs Touch ID or your password again. With \u{201C}Unlock the Mac at the lock screen\u{201D} on and a password stored, it also stays unlocked across restarts until then, or until Lock Now.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SettingsFooter("With \u{201C}Unlock the Mac at the lock screen\u{201D} on and a password stored, Face Unlock stays unlocked across restarts until auto-lock or Lock Now. If it is locked when Astraea starts, Astraea asks once after you log in for Touch ID or your password.")
         }
     }
 
@@ -47,11 +42,13 @@ struct FaceSessionSection: View {
             LabeledContent {
                 Button("Unlock…", action: onUnlock)
             } label: {
-                Label("Face Unlock is locked", systemImage: "lock.fill")
+                Label {
+                    SettingsLabel("Face Unlock is locked",
+                                  detail: "Touch ID or your Mac password is needed before Astraea shows or changes your faces and stored password.")
+                } icon: {
+                    Image(systemName: "lock.fill")
+                }
             }
-            Text("Touch ID or your Mac password is needed before Astraea shows or changes your faces and stored password.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         case .locked:
             LabeledContent {
                 Text("Nothing stored yet")

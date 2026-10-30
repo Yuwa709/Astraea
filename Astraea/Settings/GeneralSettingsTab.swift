@@ -12,32 +12,40 @@ struct GeneralSettingsTab: View {
         Form {
             Section("Startup") {
                 LaunchAtLoginRow()
-                Toggle("Show menu bar icon", isOn: menuBarIconBinding)
-                if !settings.settings.showMenuBarIcon {
-                    SettingsFooter("Settings stays reachable from the gear in the notch, and Quit is in About.")
+                Toggle(isOn: menuBarIconBinding) {
+                    SettingsLabel("Show menu bar icon",
+                                  detail: settings.settings.showMenuBarIcon ? nil
+                                      : "Settings stays reachable from the gear in the notch, and Quit is in About.")
                 }
             }
 
-            Section {
-                LabeledContent("Hover delay") {
+            Section("Notch") {
+                LabeledContent {
                     HStack(spacing: 10) {
                         Slider(value: hoverDelayBinding, in: 0...1, step: 0.05)
+                            .labelsHidden()
+                            .accessibilityLabel("Hover delay")
                         Text("\(Int((settings.settings.hoverEnterDelay * 1000).rounded())) ms")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 58, alignment: .trailing)
                     }
+                    .frame(maxWidth: 260)
+                } label: {
+                    SettingsLabel("Hover delay",
+                                  detail: "How long the pointer rests on the notch before it opens.")
                 }
-                Toggle("Reopen last page", isOn: reopenLastPageBinding)
-                Toggle("Haptic feedback", isOn: hapticsBinding)
-            } header: {
-                Text("Notch")
-            } footer: {
-                SettingsFooter("Hover delay is how long the pointer rests on the notch before it opens. Reopen last page opens it where you left off, such as Clipboard, instead of the home screen. Haptic feedback ticks the trackpad as the notch opens and as you drag a window across layout zones.")
+                Toggle(isOn: reopenLastPageBinding) {
+                    SettingsLabel("Reopen last page",
+                                  detail: "Opens where you left off, such as Clipboard, instead of the home screen.")
+                }
+                Toggle(isOn: hapticsBinding) {
+                    SettingsLabel("Haptic feedback",
+                                  detail: "Ticks the trackpad as the notch opens and as you drag a window across layout zones.")
+                }
             }
         }
-        .formStyle(.grouped)
-        .padding()
+        .settingsPage()
     }
 
     /// Writes straight through to the store; `MenuBarExtra(isInserted:)`
@@ -112,20 +120,16 @@ private struct LaunchAtLoginRow: View {
             .onReceive(NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
         if status == .requiresApproval {
-            HStack {
-                Text("Needs your approval in System Settings → General → Login Items before it takes effect.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            LabeledContent {
                 Button("Open Login Items…") {
                     SMAppService.openSystemSettingsLoginItems()
                 }
+            } label: {
+                SettingsNote(text: "Needs your approval in System Settings → General → Login Items before it takes effect.")
             }
         }
         if let registrationError {
-            Text(registrationError)
-                .font(.caption)
-                .foregroundStyle(.red)
+            SettingsNote(text: registrationError, symbol: "xmark.octagon.fill", tint: .red)
         }
     }
 

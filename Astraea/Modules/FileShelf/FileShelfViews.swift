@@ -5,12 +5,13 @@ import UniformTypeIdentifiers
 ///
 /// **Mid-drag** it is a chooser: two large zones side by side, *Add to Shelf*
 /// and *AirDrop*, so a file dragged at the notch picks its fate in one
-/// gesture. **At rest** it is the shelf itself: a "File Drops" header above
-/// one wide dashed region holding the parked files as tiles.
+/// gesture. **At rest** it is the shelf itself: a page header above one wide
+/// dashed region holding the parked files as tiles, with a full-width
+/// AirDrop bar beneath.
 ///
-/// Layout replicated from user-supplied full-screen captures (2026-08-30) at
-/// this display's 0.735 px-to-point scale: 230×125 chooser zones in a snug
-/// 540pt panel, the resting shelf in a 690pt one.
+/// Sizes date from user-supplied full-screen captures (2026-08-30): 230×125
+/// chooser zones in a snug 540pt panel, the resting shelf in a 690pt one.
+/// Both widths are pinned by ChromeBandFitTests.
 ///
 /// The two modes are deliberately different sizes — Joshua asked for the
 /// chooser panel to hug its zones — and that is safe because a mode swap can
@@ -29,8 +30,21 @@ struct FileShelfExpandedView: View {
                 ShelfHomeView(service: service)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(NotchStyle.Ink.primary)
     }
+}
+
+/// Private tokens for this page. Neutral grey throughout, no brown and no
+/// AirDrop blue (user, 2026-10-29); a drop target brightens to white while
+/// a drag is over it rather than taking the accent colour.
+private enum ShelfStyle {
+    static let tint = Color.gray
+    static let airDropTint = Color.gray
+    static let target = Color.white
+    /// Dashed outline for "this is a place things live".
+    static let dash: [CGFloat] = [6, 5]
+    /// Outline of an untargeted zone: a stroke, never text.
+    static let restingStroke = Color.white.opacity(0.18)
 }
 
 // MARK: - Mid-drag chooser
@@ -43,8 +57,9 @@ private struct DragChooserView: View {
     @State private var airdropTargeted = false
 
     var body: some View {
-        HStack(spacing: 16) {
-            DropZone(symbol: "tray.and.arrow.down", label: "Add to Shelf",
+        HStack(spacing: NotchStyle.Spacing.l) {
+            DropZone(symbol: "tray.and.arrow.down.fill", label: "Add to Shelf",
+                     detail: "Keep it here for later", tint: ShelfStyle.tint,
                      dashed: true, targeted: shelfTargeted)
                 .onDrop(of: [.fileURL], isTargeted: $shelfTargeted) { providers in
                     load(providers) { service.add($0) }
@@ -53,6 +68,7 @@ private struct DragChooserView: View {
             // No public "airdrop" SF Symbol exists (checked 2026-08-30), so
             // the radio-waves glyph stands in for the concentric-arcs logo.
             DropZone(symbol: "dot.radiowaves.left.and.right", label: "AirDrop",
+                     detail: "Send to a nearby device", tint: ShelfStyle.airDropTint,
                      dashed: false, targeted: airdropTargeted)
                 .onDrop(of: [.fileURL], isTargeted: $airdropTargeted) { providers in
                     shareDropped(providers, via: service)
@@ -65,47 +81,62 @@ private struct DragChooserView: View {
 }
 
 /// One chooser target. The shelf side is dashed ("this is a place things
-/// live"), the AirDrop side solid ("this is an action").
+/// live"), the AirDrop side solid ("this is an action"). The whole 230×125
+/// card is the target; it brightens to white while targeted.
 private struct DropZone: View {
     let symbol: String
     let label: String
+    let detail: String
+    let tint: Color
     let dashed: Bool
     let targeted: Bool
 
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: NotchStyle.Radius.card, style: .continuous)
+    }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: NotchStyle.Spacing.s) {
             Image(systemName: symbol)
-                .font(.system(size: 24, weight: .medium))
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(tint.gradient))
+                .scaleEffect(targeted ? 1.08 : 1)
+            VStack(spacing: 2) {
+                Text(label)
+                    .font(NotchStyle.Font.bodyEmphasis)
+                    .foregroundStyle(NotchStyle.Ink.primary)
+                Text(detail)
+                    .font(NotchStyle.Font.caption)
+                    .foregroundStyle(targeted ? NotchStyle.Ink.secondary : NotchStyle.Ink.tertiary)
+            }
         }
-        .foregroundStyle(.white.opacity(targeted ? 0.95 : 0.65))
         .frame(width: 230, height: 125)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(style: StrokeStyle(
-                    lineWidth: 1.5, dash: dashed ? [9, 7] : []))
-                .foregroundStyle(.white.opacity(targeted ? 0.65 : 0.28))
+        .background(shape.fill(targeted ? ShelfStyle.target.opacity(0.22) : NotchStyle.Fill.card))
+        .overlay(
+            shape.strokeBorder(style: StrokeStyle(lineWidth: targeted ? 2 : 1,
+                                                  dash: dashed && !targeted ? ShelfStyle.dash : []))
+                .foregroundStyle(targeted ? ShelfStyle.target : ShelfStyle.restingStroke)
         )
-        .contentShape(Rectangle())
+        .contentShape(shape)
+        .animation(NotchStyle.motion(), value: targeted)
+        .accessibilityElement(children: .combine)
     }
 }
 
 // MARK: - Resting shelf
 
-/// The shelf at rest: header plus one wide dashed region of file tiles.
+/// The shelf at rest: header, one wide dashed region of file tiles, and the
+/// AirDrop bar.
 private struct ShelfHomeView: View {
     @Bindable var service: FileShelfService
 
-    @State private var zoneTargeted = false
-
-    @State private var airdropTargeted = false
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NotchStyle.Spacing.m) {
             header
-            zone
-            airdropBar
+            ShelfTilesZone(service: service)
+            AirDropBar(service: service)
         }
         .frame(width: 626, alignment: .leading)
     }
@@ -113,41 +144,50 @@ private struct ShelfHomeView: View {
     /// No clear-all control on purpose — one misclick emptying the whole
     /// shelf is the wrong failure mode; each tile removes itself instead.
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tray.full")
-                .font(.system(size: 15))
-                .foregroundStyle(.white.opacity(0.7))
-            Text("File Drops")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
-            Spacer()
-        }
-        .frame(height: 24)
+        NotchPageHeader(symbol: "tray.full.fill", title: "File Shelf",
+                        tint: ShelfStyle.tint, subtitle: subtitle)
     }
 
-    private var zone: some View {
+    private var subtitle: String? {
+        let count = service.entries.count
+        guard count > 0 else { return nil }
+        return "\(count) \(count == 1 ? "file" : "files") · drag out to use anywhere"
+    }
+}
+
+/// The parked files, inside the shelf's own drop region.
+private struct ShelfTilesZone: View {
+    @Bindable var service: FileShelfService
+
+    @State private var zoneTargeted = false
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: NotchStyle.Radius.card, style: .continuous)
+    }
+
+    var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [9, 7]))
-                .foregroundStyle(.white.opacity(zoneTargeted ? 0.6 : 0.25))
+            shape.fill(zoneTargeted ? ShelfStyle.target.opacity(0.16) : NotchStyle.Fill.card)
+            shape.strokeBorder(style: StrokeStyle(lineWidth: zoneTargeted ? 2 : 1,
+                                                  dash: zoneTargeted ? [] : ShelfStyle.dash))
+                .foregroundStyle(zoneTargeted ? ShelfStyle.target : ShelfStyle.restingStroke)
             if service.entries.isEmpty {
-                Text("Drop files here")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.4))
+                NotchEmptyState(symbol: "tray.and.arrow.down", message: "Drop files here")
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 10)],
-                              spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: NotchStyle.Spacing.s)],
+                              spacing: NotchStyle.Spacing.s) {
                         ForEach(service.entries) { entry in
                             ShelfItem(service: service, entry: entry)
                         }
                     }
-                    .padding(12)
+                    .padding(NotchStyle.Spacing.s)
                 }
             }
         }
         .frame(height: 128)
         .frame(maxWidth: .infinity)
+        .animation(NotchStyle.motion(), value: zoneTargeted)
         // Belt and braces: drags normally swap this view for the chooser, but
         // if that signal ever failed this keeps the shelf accepting drops.
         .onDrop(of: [.fileURL], isTargeted: $zoneTargeted) { providers in
@@ -155,26 +195,39 @@ private struct ShelfHomeView: View {
             return true
         }
     }
+}
 
-    /// The way off the shelf: drag any tile onto this bar to AirDrop it. A
-    /// full-width target, because a tile drag keeps this screen up (see the
-    /// type comment) and the drop has to have somewhere obvious to land —
-    /// the per-tile hover button this replaces was too small to notice.
-    private var airdropBar: some View {
-        HStack(spacing: 8) {
+/// The way off the shelf: drag any tile onto this bar to AirDrop it. A
+/// full-width target, because a tile drag keeps this screen up (see the
+/// type comment) and the drop has to have somewhere obvious to land —
+/// the per-tile hover button this replaces was too small to notice.
+private struct AirDropBar: View {
+    @Bindable var service: FileShelfService
+
+    @State private var airdropTargeted = false
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: NotchStyle.Radius.card, style: .continuous)
+    }
+
+    var body: some View {
+        HStack(spacing: NotchStyle.Spacing.s) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(ShelfStyle.airDropTint.gradient))
             Text("Drop here to AirDrop")
-                .font(.system(size: 12, weight: .semibold))
+                .font(NotchStyle.Font.bodyEmphasis)
+                .foregroundStyle(airdropTargeted ? NotchStyle.Ink.primary : NotchStyle.Ink.secondary)
         }
-        .foregroundStyle(.white.opacity(airdropTargeted ? 0.95 : 0.6))
         .frame(maxWidth: .infinity)
-        .frame(height: 46)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(lineWidth: 1.5)
-                .foregroundStyle(.white.opacity(airdropTargeted ? 0.65 : 0.28))
-        )
+        .frame(height: 44)
+        .background(shape.fill(airdropTargeted ? ShelfStyle.target.opacity(0.22) : NotchStyle.Fill.card))
+        .overlay(shape.strokeBorder(lineWidth: airdropTargeted ? 2 : 1)
+            .foregroundStyle(airdropTargeted ? ShelfStyle.target : ShelfStyle.restingStroke))
+        .contentShape(shape)
+        .animation(NotchStyle.motion(), value: airdropTargeted)
         .onDrop(of: [.fileURL], isTargeted: $airdropTargeted) { providers in
             shareDropped(providers, via: service)
             return true
@@ -218,7 +271,8 @@ private func load(_ providers: [NSItemProvider], action: @escaping (URL) -> Void
 }
 
 /// One parked file: thumbnail, name, and a remove affordance. Draggable out
-/// to Finder or any app that accepts files.
+/// to Finder or any app that accepts files. Highlights under the pointer the
+/// way a Finder icon-view item does.
 private struct ShelfItem: View {
     @Bindable var service: FileShelfService
     let entry: FileShelfEntry
@@ -226,7 +280,10 @@ private struct ShelfItem: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
+            // The remove badge must keep overlapping the thumbnail's top-right
+            // corner: that 20pt corner is what DragSourceView.hitTest stops
+            // claiming while `hovering` is true, so the badge stays clickable.
             ZStack(alignment: .topTrailing) {
                 thumbnail
                     // AppKit drag source, not SwiftUI's .onDrag: see
@@ -248,22 +305,28 @@ private struct ShelfItem: View {
                 if hovering {
                     Button { service.remove(entry) } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white, .black.opacity(0.6))
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white, Color(white: 0.3))
                     }
                     .buttonStyle(.plain)
                     .offset(x: 6, y: -6)
                     .help("Remove from shelf — the file itself is untouched")
+                    .accessibilityLabel("Remove \(entry.name) from shelf")
                 }
             }
             Text(entry.name)
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.75))
+                .font(NotchStyle.Font.caption)
+                .foregroundStyle(hovering ? NotchStyle.Ink.primary : NotchStyle.Ink.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(width: 84)
+                .frame(width: 80)
         }
+        .padding(.vertical, 6)
+        .frame(width: 88)
+        .background(RoundedRectangle(cornerRadius: NotchStyle.Radius.row, style: .continuous)
+            .fill(hovering ? NotchStyle.Fill.hover : .clear))
         .onHover { hovering = $0 }
+        .animation(NotchStyle.motion(.easeOut(duration: 0.12)), value: hovering)
     }
 
     @ViewBuilder
@@ -274,12 +337,12 @@ private struct ShelfItem: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 64, height: 64)
         } else {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.white.opacity(0.1))
+            RoundedRectangle(cornerRadius: NotchStyle.Radius.thumb, style: .continuous)
+                .fill(NotchStyle.Fill.selected)
                 .frame(width: 64, height: 64)
                 .overlay(Image(systemName: "doc")
                     .font(.system(size: 22))
-                    .foregroundStyle(.white.opacity(0.5)))
+                    .foregroundStyle(NotchStyle.Ink.tertiary))
         }
     }
 }

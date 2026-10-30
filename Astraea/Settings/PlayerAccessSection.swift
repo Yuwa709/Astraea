@@ -164,22 +164,23 @@ private struct PermissionRow: View {
     let state: AutomationPermission
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent(target.displayName) {
-                HStack(spacing: 6) {
-                    Image(systemName: symbol).foregroundStyle(tint)
-                    Text(label)
-                    if state == .denied {
-                        Spacer()
-                        Button("Open System Settings…") { AutomationProbe.openSystemSettings() }
-                    }
+        LabeledContent {
+            HStack(spacing: 8) {
+                if state == .denied {
+                    Button("Open System Settings…") { AutomationProbe.openSystemSettings() }
                 }
+                Label {
+                    Text(label)
+                } icon: {
+                    Image(systemName: symbol).foregroundStyle(tint)
+                }
+                .foregroundStyle(.secondary)
             }
-            if state == .denied {
-                Text("Astraea needs Automation access to read and control playback in \(target.displayName).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        } label: {
+            SettingsLabel(target.displayName,
+                          detail: state == .denied
+                              ? "Astraea needs Automation access to read and control playback in \(target.displayName)."
+                              : nil)
         }
     }
 

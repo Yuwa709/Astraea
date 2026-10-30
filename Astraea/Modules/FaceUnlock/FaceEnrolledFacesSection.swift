@@ -19,9 +19,7 @@ struct FaceEnrolledFacesSection: View {
         } header: {
             Text("Enrolled Faces")
         } footer: {
-            Text("Each face is stored as numbers, never as a picture, encrypted with a key in your login keychain. After a Astraea update, macOS may ask once whether the new version can use that key.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SettingsFooter("Each face is stored as numbers, never as a picture, encrypted with a key in your login keychain. After an Astraea update, macOS may ask once whether the new version can use that key.")
         }
     }
 
@@ -33,8 +31,7 @@ struct FaceEnrolledFacesSection: View {
         case .unlocking:
             ProgressView().controlSize(.small)
         case .unreadable(let reason):
-            Label(reason, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+            SettingsNote(text: reason)
             if let error = store.lastError { errorText(error) }
             deleteAllButton
         case .ready:
@@ -82,8 +79,11 @@ struct FaceEnrolledFacesSection: View {
     /// Off while a prompt is up, and while the key is missing: a new face
     /// would need a new key, which is never minted over existing data.
     private var addButton: some View {
-        Button("Add a Face…", action: onAdd)
-            .disabled(store.session.state == .unlocking || store.session.state == .keyMissing)
+        HStack {
+            Spacer()
+            Button("Add a Face…", action: onAdd)
+                .disabled(store.session.state == .unlocking || store.session.state == .keyMissing)
+        }
     }
 
     /// Needs the owner check, not the key; the tab confirms first.
@@ -92,6 +92,6 @@ struct FaceEnrolledFacesSection: View {
     }
 
     private func errorText(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.red)
+        SettingsNote(text: text, symbol: "xmark.octagon.fill", tint: .red)
     }
 }

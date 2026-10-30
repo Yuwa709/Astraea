@@ -11,9 +11,8 @@ import os
 /// destructive button would be worse than a footer under the information it
 /// belongs with.
 ///
-/// **Check for Updates belongs beside it** when Sparkle lands (Phase 5), for
-/// exactly the same reason: an updater reachable only from a menu that may
-/// not exist is not reachable. The spacer below is the room for it.
+/// **Check for Updates belongs beside it** for exactly the same reason: an
+/// updater reachable only from a menu that may not exist is not reachable.
 struct AboutSettingsTab: View {
 
     let updater: SPUUpdater?
@@ -32,45 +31,62 @@ struct AboutSettingsTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Astraea")
-                    .font(.system(size: 20, weight: .semibold))
-                Text(version)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text("MIT licensed. Free and open source.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                // Must stay the same account the appcast is served from
-                // (SUFeedURL in Info.plist), or the About tab points somewhere
-                // other than where updates come from.
-                if let repository = Self.repositoryURL {
-                    Link("github.com/Yuwa709/Astraea", destination: repository)
-                        .font(.callout)
-                }
+        Form {
+            Section {
+                AboutIdentityRow(version: version, repositoryURL: Self.repositoryURL)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let updater {
-                Spacer(minLength: 16)
-                UpdateCheckRow(updater: updater, updates: updates)
+                Section("Software Update") {
+                    UpdateCheckRow(updater: updater, updates: updates)
+                }
             }
 
-            // Keeps Quit pinned to the bottom.
-            Spacer(minLength: 16)
-
-            Divider()
-            HStack {
-                Spacer()
-                Button("Quit Astraea", role: .destructive, action: onQuit)
+            Section {
+                HStack {
+                    Spacer()
+                    Button("Quit Astraea", role: .destructive, action: onQuit)
+                }
             }
-            .padding(.top, 12)
         }
-        .padding()
+        .settingsPage()
     }
 }
 
+/// The app's icon, name, version, licence and source link, centred the way
+/// a Mac app's About panel shows them.
+private struct AboutIdentityRow: View {
+
+    let version: String
+    let repositoryURL: URL?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
+            Text("Astraea")
+                .font(.title2.weight(.semibold))
+            Text(version)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Text("MIT licensed. Free and open source.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            // Must stay the same account the appcast is served from
+            // (SUFeedURL in Info.plist), or the About tab points somewhere
+            // other than where updates come from.
+            if let repositoryURL {
+                Link("github.com/Yuwa709/Astraea", destination: repositoryURL)
+                    .font(.callout)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+}
 
 /// Update check, in About because the menu bar icon is optional — an
 /// updater reachable only from a menu that may not exist is not reachable.
@@ -108,15 +124,7 @@ private struct UpdateCheckRow: View {
     }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Updates")
-                    .font(.callout)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        LabeledContent {
             // Sparkle activates the app itself to show its windows for a
             // background agent: the same narrow click-driven carve-out to
             // hard rule 4 the settings gear documents. No hover path
@@ -126,6 +134,8 @@ private struct UpdateCheckRow: View {
                 updater.checkForUpdates()
             }
             .disabled(!model.canCheckForUpdates && available == nil)
+        } label: {
+            SettingsLabel("Updates", detail: detail)
         }
     }
 }

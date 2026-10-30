@@ -29,7 +29,7 @@ struct FaceLockScreenPermissionsSection: View {
                 }
             }
         } header: {
-            Text("Lock Screen Permissions")
+            Text("Permissions")
         }
     }
 
@@ -51,21 +51,19 @@ private struct FacePermissionRow<Remedy: View>: View {
     @ViewBuilder let remedy: () -> Remedy
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent(title) {
-                HStack(spacing: 6) {
+        LabeledContent {
+            HStack(spacing: 8) {
+                if !isGranted { remedy() }
+                Label {
+                    Text(isGranted ? "Granted" : "Not granted")
+                } icon: {
                     Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(isGranted ? .green : .orange)
-                    Text(isGranted ? "Granted" : "Not granted")
-                    if !isGranted {
-                        Spacer()
-                        remedy()
-                    }
                 }
+                .foregroundStyle(.secondary)
             }
-            if !isGranted && !note.isEmpty {
-                Text(note).font(.caption).foregroundStyle(.secondary)
-            }
+        } label: {
+            SettingsLabel(title, detail: isGranted ? nil : note)
         }
     }
 }

@@ -82,7 +82,7 @@ struct SystemStatsCompactView: View {
     let service: SystemStatsService
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: NotchStyle.Spacing.m) {
             if let cpu = service.stats.cpuFraction {
                 StatChip(symbol: "cpu", text: percent(cpu))
             }
@@ -109,7 +109,7 @@ struct SystemStatsExpandedView: View {
     let service: SystemStatsService
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: NotchStyle.Spacing.l + 2) {
             gauge("CPU", service.stats.cpuFraction)
             gauge("MEM", service.stats.memoryFraction)
             gauge("GPU", service.stats.gpuFraction)
@@ -120,7 +120,7 @@ struct SystemStatsExpandedView: View {
                 labelled("DISK", ByteCountFormatter.string(fromByteCount: free, countStyle: .file))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(NotchStyle.Ink.primary)
     }
 
     /// A stat that cannot be read is omitted, never shown as zero.
@@ -134,12 +134,13 @@ struct SystemStatsExpandedView: View {
     private func labelled(_ title: String, _ value: String) -> some View {
         VStack(spacing: 2) {
             Text(title)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
+                .font(NotchStyle.Font.footnote.weight(.medium))
+                .foregroundStyle(NotchStyle.Ink.tertiary)
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .monospacedDigit()
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -148,13 +149,15 @@ private struct StatChip: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: NotchStyle.Spacing.xs) {
             Image(systemName: symbol)
-                .font(.system(size: 9))
-            Text(text)
                 .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(NotchStyle.Ink.secondary)
+            Text(text)
+                .font(NotchStyle.Font.captionEmphasis)
+                .foregroundStyle(NotchStyle.Ink.primary)
                 .monospacedDigit()
         }
-        .foregroundStyle(.white)
+        .accessibilityElement(children: .combine)
     }
 }

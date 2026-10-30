@@ -2,10 +2,11 @@ import SwiftUI
 
 /// The stats door: everything the data layer already reads, on one screen.
 ///
-/// Battery first — the charge, and how long until full and until empty,
-/// which is what someone opening the page came to see — then the pack's
-/// condition and the machine rows. Reads only what `BatteryService` and
-/// `SystemStatsService` publish; this view adds no IOKit of its own.
+/// Three bands, most-wanted first. The battery card: the charge, a level
+/// bar, and how long until full and until empty, which is what someone
+/// opening the page came to see. Then the pack's long-term figures beside
+/// the adapter. Then the machine's usage. Reads only what `BatteryService`
+/// and `SystemStatsService` publish; this view adds no IOKit of its own.
 ///
 /// No history: the page shows now. A 24-hour charge graph lived here until
 /// 2026-10-07, filled only while the page was open, and so was always empty.
@@ -25,147 +26,123 @@ struct SystemStatsPageView: View {
     static let contentWidth: CGFloat = 560
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SystemStatsPageHeader(snapshot: battery.snapshot)
-            BatteryTimeCards(snapshot: battery.snapshot)
-            cards
-            conditionLine
-            SystemStatsMachineRows(stats: stats.stats)
+        VStack(alignment: .leading, spacing: NotchStyle.Spacing.m) {
+            // Same glyph and tint as the feature's switch in Settings.
+            NotchPageHeader(symbol: "cpu.fill", title: "System Stats", tint: .orange) {
+                if battery.snapshot?.isLowPowerMode == true { LowPowerBadge() }
+            }
+            BatteryOverviewCard(snapshot: battery.snapshot)
+            BatteryDetailRow(snapshot: battery.snapshot)
+            VStack(alignment: .leading, spacing: 6) {
+                NotchSectionLabel("Usage")
+                SystemStatsMachineRows(stats: stats.stats)
+            }
         }
         .frame(width: Self.contentWidth, alignment: .leading)
-        .foregroundStyle(.white)
+        .foregroundStyle(NotchStyle.Ink.primary)
     }
+}
 
-    private var cards: some View {
-        HStack(spacing: 10) {
-            let snapshot = battery.snapshot
-            StatCard(title: "Capacity",
-                     value: snapshot?.displayHealthPercent.map { "\(Int($0.rounded()))%" } ?? "—",
-                     detail: capacityDetail(snapshot))
-            // Cycles took Temperature's place on 2026-10-07: macOS 27
-            // publishes no battery temperature, and the SMC's keys for it
-            // are undocumented with nothing left to check them against.
-            StatCard(title: "Cycles",
-                     value: snapshot?.cycleCount.map { "\($0)" } ?? "—",
-                     detail: "Charge cycles")
-            StatCard(title: "Adapter",
-                     value: adapterValue(snapshot),
-                     detail: adapterDetail(snapshot))
-        }
-    }
+/// The pack's long-term figures on one card, the adapter on its own: what
+/// the battery is, beside what is feeding it.
+///
+/// Condition is macOS's verdict and keeps its own column and provenance
+/// line, so it is never read as the same number as Capacity, which is a
+/// ratio Astraea computes. Absent rather than guessed when the system
+/// declines to say.
+struct BatteryDetailRow: View {
+    let snapshot: BatterySnapshot?
 
-    /// macOS's verdict, kept visually apart from the Capacity percentage so
-    /// the two are never read as one number. Absent rather than guessed when
-    /// the system declines to say.
-    private var conditionLine: some View {
-        HStack(spacing: 6) {
-            Text("CONDITION")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(0.45))
-            Text(battery.snapshot?.conditionDescription ?? "Not reported")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-            Text("reported by macOS")
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.3))
-            Spacer(minLength: 0)
+    /// The adapter card's width; the health card takes the rest, so its
+    /// three columns come out about as wide as this one.
+    private static let adapterWidth: CGFloat = 134
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NotchStyle.Spacing.s) {
+            HStack(alignment: .top, spacing: NotchStyle.Spacing.m) {
+                StatFigure(title: "Capacity",
+                           value: snapshot?.displayHealthPercent.map { "\(Int($0.rounded()))%" } ?? "—",
+                           detail: capacityDetail)
+                // Cycles took Temperature's place on 2026-10-07: macOS 27
+                // publishes no battery temperature, and the SMC's keys for it
+                // are undocumented with nothing left to check them against.
+                StatFigure(title: "Cycles",
+                           value: snapshot?.cycleCount.map { "\($0)" } ?? "—",
+                           detail: "Charge cycles")
+                StatFigure(title: "Condition",
+                           value: snapshot?.conditionDescription ?? "Not reported",
+                           detail: "Reported by macOS")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .notchCard()
+            StatFigure(title: "Adapter", value: adapterValue, detail: adapterDetail)
+                .notchCard()
+                .frame(width: Self.adapterWidth)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// What the percentage is made of: today's full charge against the
     /// factory figure, both in mAh.
-    private func capacityDetail(_ snapshot: BatterySnapshot?) -> String {
+    private var capacityDetail: String {
         guard let full = snapshot?.rawMaxCapacityMilliampHours,
               let design = snapshot?.designCapacityMilliampHours else { return "Of design capacity" }
         return "\(full.formatted()) of \(design.formatted()) mAh"
     }
 
-    private func adapterValue(_ snapshot: BatterySnapshot?) -> String {
+    private var adapterValue: String {
         guard snapshot?.adapterIsPresent == true else { return "Not connected" }
         return snapshot?.adapterWatts.map { "\($0) W" } ?? "Connected"
     }
 
     /// The adapter's own `Description` string, shown verbatim — it is a
     /// category ("pd charger"), not a product name, and is never parsed.
-    private func adapterDetail(_ snapshot: BatterySnapshot?) -> String {
+    private var adapterDetail: String {
         guard snapshot?.adapterIsPresent == true else { return "On battery" }
         return snapshot?.adapterName ?? "Adapter attached"
     }
 }
 
-/// Charge percentage, charging state, and how much charge that is.
-struct SystemStatsPageHeader: View {
-    let snapshot: BatterySnapshot?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(snapshot?.percentage.map { "\($0)%" } ?? "—")
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-            VStack(alignment: .leading, spacing: 1) {
-                Text(state)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(charge)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .monospacedDigit()
-            }
-            Spacer(minLength: 0)
-            if snapshot?.isLowPowerMode == true {
-                Text("LOW POWER")
-                    .font(.system(size: 9, weight: .bold))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(.yellow.opacity(0.18)))
-                    .foregroundStyle(.yellow)
-            }
-        }
-    }
-
-    private var state: String {
-        guard let snapshot else { return "Battery unavailable" }
-        if snapshot.isFullyCharged == true { return "Fully charged" }
-        if snapshot.isCharging == true { return "Charging" }
-        if snapshot.isExternalConnected == true { return "Plugged in, not charging" }
-        return "On battery"
-    }
-
-    /// The charge left in the pack against what it holds when full, in the
-    /// gauge's own mAh. Empty rather than half a figure when either is
-    /// missing.
-    private var charge: String {
-        guard let now = snapshot?.rawCurrentCapacityMilliampHours,
-              let full = snapshot?.rawMaxCapacityMilliampHours, full > 0 else { return "" }
-        return "\(now.formatted()) of \(full.formatted()) mAh"
-    }
-}
-
-/// One compact card. Fixed metrics so the four line up on the same baseline.
-struct StatCard: View {
+/// One figure: what it is, the number, and a line saying what the number
+/// is made of. Fixed metrics so a row of them shares baselines.
+struct StatFigure: View {
     let title: String
     let value: String
     var detail: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(0.45))
+            Text(title)
+                .font(NotchStyle.Font.captionEmphasis)
+                .foregroundStyle(NotchStyle.Ink.tertiary)
             Text(value)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(NotchStyle.Font.metric)
+                .foregroundStyle(NotchStyle.Ink.primary)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(NotchStyle.Font.footnote)
+                    .foregroundStyle(NotchStyle.Ink.tertiary)
                     .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.07)))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Low Power Mode, said in words; the yellow only echoes the system's own
+/// low-power battery colour.
+struct LowPowerBadge: View {
+    var body: some View {
+        Text("Low Power")
+            .font(NotchStyle.Font.captionEmphasis)
+            .foregroundStyle(BatteryInk.lowPower)
+            .padding(.horizontal, NotchStyle.Spacing.s)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(BatteryInk.lowPower.opacity(0.18)))
+            .accessibilityLabel("Low Power Mode on")
     }
 }

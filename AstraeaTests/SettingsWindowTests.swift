@@ -79,12 +79,14 @@ final class SettingsWindowTests: XCTestCase {
         XCTAssertEqual(window?.contentMinSize.width ?? 0, 715, accuracy: 0.5)
     }
 
-    /// Order is the spec: General, Features, Music, Face Unlock, About.
-    /// Spotify and Permissions are gone as pages of their own, both folded
-    /// into Music.
+    /// Order is the spec: General, Features, Music, Window Layouts, Face
+    /// Unlock, About. Spotify and Permissions are gone as pages of their
+    /// own, both folded into Music. The sidebar's groups list every page
+    /// once, in that same order.
     func testSidebarSectionsAreInOrder() {
         XCTAssertEqual(SettingsSection.allCases.map(\.title),
-                       ["General", "Features", "Music", "Face Unlock", "About"])
+                       ["General", "Features", "Music", "Window Layouts", "Face Unlock", "About"])
+        XCTAssertEqual(SettingsSection.groups.flatMap { $0 }, SettingsSection.allCases)
         XCTAssertFalse(SettingsSection.allCases.map(\.title).contains("Spotify"))
         for section in SettingsSection.allCases {
             XCTAssertFalse(section.symbol.isEmpty, "\(section.title) needs an SF Symbol")

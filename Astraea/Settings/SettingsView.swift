@@ -6,8 +6,10 @@ import Sparkle
 ///
 /// There is no Permissions page. All it ever held was Spotify's and Music's
 /// Automation access, which is a music concern, so it lives in Music now.
+/// Window Layouts has a page of its own: its list of layouts outgrew a row
+/// tucked under a switch on Features.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, features, music, faceUnlock, about
+    case general, features, music, windowLayouts, faceUnlock, about
 
     var id: String { rawValue }
 
@@ -16,6 +18,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .features: "Features"
         case .music: "Music"
+        case .windowLayouts: "Window Layouts"
         case .faceUnlock: "Face Unlock"
         case .about: "About"
         }
@@ -26,6 +29,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "gearshape.fill"
         case .features: "square.grid.2x2.fill"
         case .music: "music.note"
+        case .windowLayouts: "rectangle.3.group.fill"
         case .faceUnlock: "faceid"
         case .about: "info.circle.fill"
         }
@@ -36,10 +40,20 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: .gray
         case .features: .blue
         case .music: .pink
+        case .windowLayouts: .cyan
         case .faceUnlock: .green
         case .about: .indigo
         }
     }
+
+    /// The sidebar's groups, separated the way System Settings separates
+    /// its own: the app as a whole, then each feature's page, then About.
+    /// Every case appears exactly once, in `allCases` order.
+    static let groups: [[SettingsSection]] = [
+        [.general, .features],
+        [.music, .windowLayouts, .faceUnlock],
+        [.about],
+    ]
 }
 
 /// The settings window.
@@ -49,6 +63,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 /// three clicks away. `minWidth` below is what guarantees the sidebar can
 /// never collapse into that state again, so it is load-bearing rather than
 /// cosmetic.
+///
+/// No `navigationTitle` on the detail: it would retitle the window, and the
+/// window is found by its "Astraea Settings" title.
 struct SettingsView: View {
 
     let coordinator: NotchCoordinator
@@ -89,13 +106,19 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsSection.allCases, selection: $selection) { section in
-                Label {
-                    Text(section.title)
-                } icon: {
-                    SettingsIcon(symbol: section.symbol, tint: section.tint)
+            List(selection: $selection) {
+                ForEach(Array(SettingsSection.groups.enumerated()), id: \.offset) { _, group in
+                    Section {
+                        ForEach(group) { section in
+                            Label {
+                                Text(section.title)
+                            } icon: {
+                                SettingsIcon(symbol: section.symbol, tint: section.tint)
+                            }
+                            .tag(section)
+                        }
+                    }
                 }
-                .tag(section)
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 240)
         } detail: {
@@ -118,11 +141,13 @@ struct SettingsView: View {
             GeneralSettingsTab(coordinator: coordinator, settings: settings)
         case .features:
             FeaturesSettingsTab(coordinator: coordinator, settings: settings,
-                                appVolume: appVolume)
+                                appVolume: appVolume, onOpen: { selection = $0 })
         case .music:
             MusicSettingsTab(settings: settings, visualizer: visualizer,
                              appVolume: appVolume,
                              onPreferMusicOverVideoChange: onPreferMusicOverVideoChange)
+        case .windowLayouts:
+            WindowLayoutsSettingsTab(coordinator: coordinator, settings: settings)
         case .faceUnlock:
             if let faceStore, let facePasswordStore {
                 FaceUnlockSettingsTab(store: faceStore, passwordStore: facePasswordStore,
@@ -131,62 +156,5 @@ struct SettingsView: View {
         case .about:
             AboutSettingsTab(updater: updater, updates: updates, onQuit: onQuit)
         }
-    }
-}
-
-/// A white SF Symbol on a tinted rounded square, as System Settings draws
-/// its sidebar. Shared by the sidebar and the Features rows so the two read
-/// as one family.
-struct SettingsIcon: View {
-
-    let symbol: String
-    let tint: Color
-    var size: CGFloat = 20
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.55, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(tint.gradient,
-                        in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-/// A row's label with an icon in front, for settings rows that need one.
-struct SettingsRowLabel: View {
-
-    let title: String
-    let symbol: String
-    let tint: Color
-    var detail: String?
-
-    var body: some View {
-        HStack(spacing: 10) {
-            SettingsIcon(symbol: symbol, tint: tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
-/// The caption style every section footer uses.
-struct SettingsFooter: View {
-
-    let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
     }
 }
