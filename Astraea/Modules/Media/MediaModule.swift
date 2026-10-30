@@ -63,7 +63,9 @@ final class MediaModule: NotchModule {
     /// pressed Next ends up outside the frame and AppKit fires a *correct*
     /// mouseExited, which collapses the panel. Measured: a 59pt drop, from a
     /// 275pt panel to 216pt, with the transport row sitting inside the band
-    /// that vanishes.
+    /// that vanishes. Since the compact player (2026-10-29) the lyric line
+    /// sits inside the fixed-height header, so this now only keeps the
+    /// header's text from jumping; the panel's height no longer depends on it.
     private(set) var lyricsReserved = false
 
     /// Whether the lyric area currently occupies its full height — either
