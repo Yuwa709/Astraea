@@ -84,6 +84,16 @@ final class MediaModule: NotchModule {
     /// and three Core Image renders on the main thread on every expand.
     private(set) var artworkPalette: ArtworkPalette?
     @ObservationIgnored private var accentSourceData: Data?
+    /// Artist-provided motion artwork for the current track, when a source
+    /// supplies one. Absent is the normal case: the static cover shows.
+    /// Nothing sets it yet — no approved resolver exists — and it is
+    /// cleared on every track change and on disable, so a video can never
+    /// outlive the track it belongs to.
+    private(set) var motionArtwork: MediaArtworkModel?
+    /// Whether that video may decode: the expanded view is on screen, media
+    /// is enabled, and the display is awake (hard rule 9). Observable, unlike
+    /// the flags it is derived from, because the player view reads it.
+    private(set) var motionArtworkMayPlay = false
 
     /// Up Next and favourite, mirrored from the active source.
     private(set) var upNext: UpNextTrack?
@@ -275,6 +285,7 @@ final class MediaModule: NotchModule {
         Self.logger.notice("Display \(asleep ? "asleep" : "awake", privacy: .public); live sync and spectrum re-evaluated")
         updateLiveSync()
         updateSpectrumVisibility()
+        updateMotionArtworkGate()
         // A system now-playing stream that died, and used up its restart
         // budget, gets another chance on wake — only while media is on.
         if !asleep, isEnabled {
@@ -298,6 +309,7 @@ final class MediaModule: NotchModule {
             clearForDisable()
             Self.logger.notice("Media disabled; sources stopped")
         }
+        updateMotionArtworkGate()
     }
 
     /// Drops everything the sources had reported, so nothing stale shows on
@@ -310,6 +322,7 @@ final class MediaModule: NotchModule {
         lyrics = nil
         lyricsReserved = false
         showFullLyrics = false
+        motionArtwork = nil
         adoptSourceExtras()
         handleUpdate(nil)
     }
@@ -598,6 +611,7 @@ final class MediaModule: NotchModule {
         guard key != lastTrackKey else { return }
 
         lastTrackKey = key
+        motionArtwork = nil
         // Auto-announcing track changes (a 4s live-activity pop) shipped and
         // was experienced as a glitch — the notch "expands for a second and
         // goes back" uninvited. Off until it can be a designed banner; the
@@ -702,6 +716,7 @@ final class MediaModule: NotchModule {
         liveSyncWanted = true
         updateLiveSync()
         updateSpectrumVisibility()
+        updateMotionArtworkGate()
         volumeReadTask?.cancel()
         volumeReadTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.volumeReadDelay)
@@ -799,6 +814,25 @@ final class MediaModule: NotchModule {
         isVisible && !displayAsleep && drawsSpectrum(on: screen)
     }
 
+    // MARK: - Motion artwork
+
+    /// Re-derives `motionArtworkMayPlay`. Called wherever an input changes —
+    /// visibility, enablement, display sleep — and writes only on a change,
+    /// so the player view is not re-rendered for nothing.
+    private func updateMotionArtworkGate() {
+        let mayPlay = Self.motionArtworkShouldPlay(
+            isVisible: isVisible, isEnabled: isEnabled, displayAsleep: displayAsleep)
+        guard mayPlay != motionArtworkMayPlay else { return }
+        motionArtworkMayPlay = mayPlay
+        Self.logger.notice("Motion artwork gate \(mayPlay ? "open" : "closed", privacy: .public)")
+    }
+
+    /// The whole playback condition in one pure place, for tests.
+    static func motionArtworkShouldPlay(isVisible: Bool, isEnabled: Bool,
+                                        displayAsleep: Bool) -> Bool {
+        isVisible && isEnabled && !displayAsleep
+    }
+
     /// The app the artwork opens: the one playing the track on screen. The
     /// owning adapter's own app first (Spotify, Music); for the system
     /// source, which speaks for whichever app owns the session, the bundle
@@ -893,6 +927,7 @@ final class MediaModule: NotchModule {
         liveSyncWanted = false
         updateLiveSync()
         updateSpectrumVisibility()
+        updateMotionArtworkGate()
         volumeReadTask?.cancel()
         volumeReadTask = nil
         // A drag cannot outlive the panel, but a write still waiting on the

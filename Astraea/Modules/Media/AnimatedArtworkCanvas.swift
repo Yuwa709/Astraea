@@ -20,6 +20,9 @@ struct AnimatedArtworkCanvas: View {
     /// The cover the player already handed over, when there is one. Preferred
     /// to `fallbackCoverURL` because it costs no fetch.
     var artwork: NSImage? = nil
+    /// Off where nothing is drawn over the artwork, such as the player's
+    /// header, whose text sits beside the cover rather than on it.
+    var showsVignette = true
 
     @State private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @State private var displayAsleep = false
@@ -46,7 +49,9 @@ struct AnimatedArtworkCanvas: View {
                     } else {
                         ArtworkStill(image: artwork, url: model.fallbackCoverURL)
                     }
-                    ArtworkVignette()
+                    if showsVignette {
+                        ArtworkVignette()
+                    }
                 }
             }
             .clipped()

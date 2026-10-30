@@ -534,20 +534,39 @@ private struct MediaPlayerArtwork: View {
 
     var body: some View {
         let face = shown ?? live
+        let motion = module.motionArtwork?.canvasURL == nil ? nil : module.motionArtwork
         MediaArtworkTapTarget(module: module) {
-            if let image = face.image {
-                // Ken Burns drift, palette glow, and parallax tilt.
-                ArtworkVisualizerView(
-                    image: image,
-                    palette: face.palette,
-                    isPlaying: isPlaying,
-                    cornerRadius: PlayerLayout.artworkCorner
-                )
-                .frame(width: PlayerLayout.artworkSide,
-                       height: PlayerLayout.artworkSide)
-            } else {
-                ArtworkThumb(image: nil, side: PlayerLayout.artworkSide,
-                             corner: PlayerLayout.artworkCorner)
+            Group {
+                if let image = face.image {
+                    // Ken Burns drift, palette glow, and parallax tilt. The
+                    // drift stands down under a video, which moves on its own.
+                    ArtworkVisualizerView(
+                        image: image,
+                        palette: face.palette,
+                        isPlaying: isPlaying && motion == nil,
+                        cornerRadius: PlayerLayout.artworkCorner
+                    )
+                    .frame(width: PlayerLayout.artworkSide,
+                           height: PlayerLayout.artworkSide)
+                } else {
+                    ArtworkThumb(image: nil, side: PlayerLayout.artworkSide,
+                                 corner: PlayerLayout.artworkCorner)
+                }
+            }
+            // Motion artwork lies over the still rather than replacing it:
+            // the glow stays, and the cover shows until the first frame and
+            // whenever the video fails. Hit testing off, so the click still
+            // lands on the tap target's button.
+            .overlay {
+                if let motion {
+                    AnimatedArtworkCanvas(model: motion,
+                                          isActive: module.motionArtworkMayPlay && isPlaying,
+                                          artwork: face.image,
+                                          showsVignette: false)
+                        .clipShape(RoundedRectangle(cornerRadius: PlayerLayout.artworkCorner,
+                                                    style: .continuous))
+                        .allowsHitTesting(false)
+                }
             }
         }
         // About the vertical centre line, like a card turned over.
