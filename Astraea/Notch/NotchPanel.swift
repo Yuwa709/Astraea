@@ -422,7 +422,7 @@ final class NotchPanel: NSPanel {
         // The trackpad ticks as the notch snaps open — only on the way in,
         // and only when the hand is on the trackpad (the system's rule).
         if state == .expanded && !wasExpanded {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            Haptics.perform(.alignment, performanceTime: .default)
         }
 
         guard target != frame else { return }

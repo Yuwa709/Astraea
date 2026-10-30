@@ -118,7 +118,7 @@ final class WindowLayoutModule: NotchModule {
         // A detent as the cursor settles on each zone, the same feel as
         // the panel's own expansion. Trackpads without Force Touch ignore it.
         if zone != nil {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            Haptics.perform(.alignment, performanceTime: .now)
         }
         Self.logger.notice("Hovered zone: \(zone ?? "none", privacy: .public)")
     }
@@ -144,7 +144,7 @@ final class WindowLayoutModule: NotchModule {
             Self.requestAccessibilityIfNeeded()
             return
         }
-        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        Haptics.perform(.levelChange, performanceTime: .now)
         // After the window server has finished its own drag, or the app's
         // trailing move lands on top of ours.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

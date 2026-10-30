@@ -173,6 +173,7 @@ final class NotchCoordinator {
         self.caffeinate = caffeinate
         self.statsPage = statsPage
         self.appVolume = appVolume
+        Haptics.isEnabled = settings.settings.hapticsEnabled
         self.arbiter = arbiter ?? NotchArbiter()
         self.arbiter.onPresentationChange = { [weak self] presentation in
             self?.presentationChanged(presentation)
@@ -265,6 +266,13 @@ final class NotchCoordinator {
     func setReopenLastPage(_ enabled: Bool) {
         settings.update { $0.reopenLastPage = enabled }
         Self.logger.notice("Reopen last page \(enabled ? "on" : "off", privacy: .public)")
+    }
+
+    /// From Settings. Applies to the next haptic.
+    func setHapticsEnabled(_ enabled: Bool) {
+        settings.update { $0.hapticsEnabled = enabled }
+        Haptics.isEnabled = enabled
+        Self.logger.notice("Haptics \(enabled ? "on" : "off", privacy: .public)")
     }
 
     /// From Settings: persists and applies to the live panel immediately.

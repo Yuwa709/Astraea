@@ -33,7 +33,8 @@ struct AppSettings: Codable, Equatable {
     /// v15: added faceUnlockLiveness.
     /// v16: added reopenLastPage.
     /// v17: added windowLayouts.
-    static let currentSchemaVersion = 17
+    /// v18: added hapticsEnabled.
+    static let currentSchemaVersion = 18
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -53,6 +54,12 @@ struct AppSettings: Codable, Equatable {
     /// **Off by default**: home is the behaviour every install has had.
     /// Only the switch is stored; the page itself is session state.
     var reopenLastPage: Bool = false
+
+    /// Trackpad haptics: the tick as the notch opens, as the cursor settles
+    /// on a window layout zone, and as a window snaps into place. **On by
+    /// default**, for upgraded installs too: it is how every earlier version
+    /// behaved. A trackpad without haptics ignores the calls either way.
+    var hapticsEnabled: Bool = true
 
     // `spotifyClientID` lived here until v4. It was a per-user field, which
     // was the wrong model: the Client ID identifies *Astraea* to Spotify, not
@@ -267,7 +274,7 @@ struct AppSettings: Codable, Equatable {
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
         case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
-        case reopenLastPage, windowLayouts
+        case reopenLastPage, windowLayouts, hapticsEnabled
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -353,6 +360,9 @@ struct AppSettings: Codable, Equatable {
         // also catches a value that is not an object at all.
         windowLayouts = (try? container.decode(WindowLayouts.self, forKey: .windowLayouts))
             ?? WindowLayouts()
+        // Absent in v17 and earlier; on is the shipped default.
+        hapticsEnabled = (try? container.decode(Bool.self, forKey: .hapticsEnabled))
+            ?? true
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -474,6 +484,11 @@ struct AppSettings: Codable, Equatable {
             // v17 added windowLayouts; the lenient decoder fills an empty one
             // for v16 JSON: no custom layouts, every built-in showing, which
             // is exactly the picker v16 had. Nothing moves.
+            fallthrough
+        case 17:
+            // v18 added hapticsEnabled; the lenient decoder fills true for
+            // v17 JSON, which is the on-by-default state every earlier
+            // version behaved as. Nothing moves.
             fallthrough
         default:
             break

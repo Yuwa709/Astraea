@@ -29,10 +29,11 @@ struct GeneralSettingsTab: View {
                     }
                 }
                 Toggle("Reopen last page", isOn: reopenLastPageBinding)
+                Toggle("Haptic feedback", isOn: hapticsBinding)
             } header: {
                 Text("Notch")
             } footer: {
-                SettingsFooter("Hover delay is how long the pointer rests on the notch before it opens. Reopen last page opens it where you left off, such as Clipboard, instead of the home screen.")
+                SettingsFooter("Hover delay is how long the pointer rests on the notch before it opens. Reopen last page opens it where you left off, such as Clipboard, instead of the home screen. Haptic feedback ticks the trackpad as the notch opens and as you drag a window across layout zones.")
             }
         }
         .formStyle(.grouped)
@@ -52,6 +53,13 @@ struct GeneralSettingsTab: View {
         Binding(
             get: { settings.settings.reopenLastPage },
             set: { coordinator.setReopenLastPage($0) }
+        )
+    }
+
+    private var hapticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.settings.hapticsEnabled },
+            set: { coordinator.setHapticsEnabled($0) }
         )
     }
 

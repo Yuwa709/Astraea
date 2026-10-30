@@ -920,7 +920,7 @@ final class AppSettingsTests: XCTestCase {
         """)
         let settings = store().settings
 
-        XCTAssertEqual(settings.schemaVersion, 17)
+        XCTAssertGreaterThanOrEqual(settings.schemaVersion, 17, "v16 lands at v17 or beyond")
         XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
         XCTAssertEqual(settings.moduleEnablement, ["media": true, "clipboard": false, "window-layout": true])
         XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
@@ -994,6 +994,31 @@ final class AppSettingsTests: XCTestCase {
         let settings = store().settings
         XCTAssertEqual(settings.windowLayouts, AppSettings.WindowLayouts())
         XCTAssertTrue(settings.reopenLastPage)
+    }
+
+    // MARK: - v18: Haptics
+
+    func testV17JSONMigratesToV18WithHapticsOn() {
+        write(#"{"schemaVersion": 17, "hoverEnterDelay": 0.42, "reopenLastPage": true, "moduleEnablement": {"media": false}}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertTrue(settings.hapticsEnabled, "on by default, for upgraded installs too")
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.reopenLastPage)
+        XCTAssertEqual(settings.moduleEnablement, ["media": false])
+    }
+
+    func testHapticsEnabledRoundTrips() {
+        XCTAssertTrue(AppSettings().hapticsEnabled)
+        store().update { $0.hapticsEnabled = false }
+        XCTAssertFalse(store().settings.hapticsEnabled, "must survive a reload")
+    }
+
+    func testMalformedHapticsEnabledCostsOnlyItself() {
+        write(#"{"schemaVersion": 18, "hapticsEnabled": "yes", "hoverEnterDelay": 0.5}"#)
+        let settings = store().settings
+        XCTAssertTrue(settings.hapticsEnabled)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
     }
 
     // MARK: - Module toggles decode per entry
