@@ -97,33 +97,50 @@ private enum PlayerLayout {
     static let titleFont = Font.system(size: 16, weight: .semibold)
     static let titleArtistSpacing: CGFloat = 2
 
-    /// The time labels flank the wave on its own row rather than sitting
-    /// under it, which cost a row of height. Gap to the wave, the labels'
-    /// minimum width (fits "0:00" to "59:59" without the wave moving), and
-    /// their type.
-    static let waveTimeSpacing: CGFloat = 8
+    /// The time labels sit at the ends of the transport row, which leaves
+    /// the wave the full width. Their minimum width (fits "0:00" to "59:59"
+    /// without jitter) and their type.
     static let timeLabelMinWidth: CGFloat = 30
     static let timeFont = Font.system(size: 10, weight: .medium)
 
-    /// The header's controls. Transport on top, a step smaller than the
-    /// old row of its own so the two control rows fit the artwork's height
-    /// (34 + 22 = 56); the secondary controls (shuffle, heart, volume,
-    /// repeat) beneath, quieter and smaller.
+    /// Transport, centred on its own row under the wave (user, 2026-10-29:
+    /// play belongs in the middle). Was stacked over the secondary controls
+    /// in the header's trailing corner. Spaced wider than it was there: on
+    /// a row of its own it reads as the page's main control.
     static let transportGlyphSize: CGFloat = 16
     static let playGlyphSize: CGFloat = 22
     static let transportButtonSide: CGFloat = 30
     static let playButtonSide: CGFloat = 34
-    static let transportSpacing: CGFloat = 4
+    static let transportSpacing: CGFloat = 12
+    /// Wave to transport. At least `ScrubGeometry.hitOverhang`, so the scrub
+    /// bar's grab zone never reaches the transport buttons below it.
+    static let waveTransportSpacing: CGFloat = ScrubGeometry.hitOverhang
+
+    /// The secondary controls (shuffle, heart, volume, repeat) live behind
+    /// the header's "more" button, standing in for the track's text while
+    /// open, spread evenly across the space. The button's glyph.
+    static let moreGlyphSize: CGFloat = 13
+    /// Their spring out of the "more" button: relaxed, a touch of settle and
+    /// no real bounce (user, 2026-10-29: "not too intense"). The scale each
+    /// starts at, and the delay between one and the next.
+    static let secondarySpring = Animation.spring(response: 0.5, dampingFraction: 0.82)
+    static let secondarySpringScale: CGFloat = 0.3
+    static let secondarySpringStagger: Double = 0.04
     static let secondaryGlyphSize: CGFloat = 11
     /// The heart draws a point larger: at the same size it read lighter
     /// than the mode glyphs beside it.
     static let heartGlyphSize: CGFloat = 12
     static let secondaryControlSide: CGFloat = 22
-    static let secondarySpacing: CGFloat = 4
 
-    /// The swap between the header's text and controls and the volume
-    /// slider, a cross-fade. Instant under Reduce Motion (hard rule 8).
-    static let volumeSwapDuration: Double = 0.16
+    /// The header's swaps between the track's text, the secondary controls
+    /// and the volume slider, a cross-fade. Instant under Reduce Motion (hard rule 8).
+    /// 0.22, up from 0.16: at that speed the fade read as a cut.
+    static let headerSwapDuration: Double = 0.22
+    /// How long the pointer may be off the player before the header falls
+    /// back to the track's text. A hand crossing the panel drifts out and
+    /// straight back; closing on the instant made the controls unusable
+    /// (user, 2026-10-29).
+    static let headerLeaveGrace: Duration = .milliseconds(500)
     /// The volume slider's track thickness, and the speaker glyphs at its
     /// two ends.
     static let volumeTrackHeight: CGFloat = 5
@@ -242,14 +259,15 @@ struct MediaExpandedView: View {
 }
 
 /// The player screen, top to bottom: the header (artwork, the track's text
-/// and lyric line, the controls), the scrub wave flanked by elapsed and
-/// remaining time, then Up Next. Its own view so `MediaExpandedView` stays a
-/// plain switch.
+/// and lyric line, the "more" button), the scrub wave, the transport row
+/// centred under it with elapsed and remaining time at its ends, then Up
+/// Next. Its own view so `MediaExpandedView` stays a plain switch.
 ///
-/// Compact (user, 2026-10-29: "expands too much"): the controls and the
-/// lyric line sit inside the artwork-tall header rather than on rows of
-/// their own, so the page is the header and the wave. The lyric line
-/// arriving or leaving therefore never changes the panel's height.
+/// Compact (user, 2026-10-29: "expands too much"): the secondary controls
+/// and the lyric line sit inside the artwork-tall header rather than on rows
+/// of their own, and the time labels share the transport's row, so the
+/// wave runs the full width. The lyric line arriving or leaving therefore
+/// never changes the panel's height.
 ///
 /// Up Next sits *below* everything on purpose. Its presence changes the
 /// panel's height (`MediaModule.setUpNext` reflows), and the panel is
@@ -261,10 +279,18 @@ private struct MediaPlayerScreen: View {
     let playing: NowPlaying
     let namespace: Namespace.ID
 
+    /// Whether the pointer is over the player, with `headerLeaveGrace` of
+    /// slack on the way out. Tracked here, over the whole screen, rather
+    /// than on the header alone: the header's 56pt strip was too narrow to
+    /// stay inside while reaching for its controls.
+    @State private var pointerInside = false
+    @State private var leaveTask: Task<Void, Never>?
+
     var body: some View {
         VStack(spacing: PlayerLayout.sectionSpacing) {
-            MediaPlayerHeader(module: module, playing: playing, namespace: namespace)
-            MediaProgressBar(module: module)
+            MediaPlayerHeader(module: module, playing: playing, namespace: namespace,
+                              pointerInside: pointerInside)
+            MediaProgressBar(module: module, isPlaying: playing.isPlaying)
             // Absent, not empty, when there is nothing to show — so its
             // arrival changes the panel's height, which is why
             // `MediaModule.setUpNext` reflows on presence. Only Music
@@ -275,71 +301,154 @@ private struct MediaPlayerScreen: View {
         }
         .frame(width: PlayerLayout.width)
         .foregroundStyle(NotchStyle.Ink.primary)
+        // The gaps between rows count as inside too.
+        .contentShape(Rectangle())
+        // The same hover tracking the header used, the one proven to fire
+        // in this panel, which is never key.
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                leaveTask?.cancel()
+                leaveTask = nil
+                pointerInside = true
+            case .ended:
+                leaveTask?.cancel()
+                leaveTask = Task { @MainActor in
+                    try? await Task.sleep(for: PlayerLayout.headerLeaveGrace)
+                    guard !Task.isCancelled else { return }
+                    pointerInside = false
+                }
+            }
+        }
+        .onDisappear { leaveTask?.cancel() }
     }
 }
 
-/// Artwork, then the track's text, then its controls, all at the artwork's
-/// height. The volume button swaps the text and controls for a volume
-/// slider until the pointer leaves them; the slider fits inside the header,
-/// so opening it never changes the panel's size.
+/// What the header shows beside the artwork.
+private enum MediaHeaderMode {
+    /// Title, artist and the lyric line.
+    case track
+    /// Shuffle, heart, volume and repeat, opened by the "more" button.
+    case controls
+    /// The volume slider, opened from `controls`.
+    case volume
+}
+
+/// Artwork, then the track's text, then the "more" button, all at the
+/// artwork's height. "More" swaps the text for the secondary controls, and
+/// their volume button swaps those for a volume slider; either goes back to
+/// the text when the pointer leaves the player (`MediaPlayerScreen`), or on
+/// a second press of "more". Everything fits inside the header, so none of
+/// it ever changes the panel's size.
 private struct MediaPlayerHeader: View {
     let module: MediaModule
     let playing: NowPlaying
     let namespace: Namespace.ID
+    /// Owned by `MediaPlayerScreen`, which tracks the whole player.
+    let pointerInside: Bool
 
-    @State private var showsSlider = false
-    @State private var pointerInside = false
+    @State private var mode: MediaHeaderMode = .track
     @State private var dragging = false
+
+    private var hasSecondary: Bool {
+        module.showsPlaybackModes || module.likedCurrent != nil || module.showsVolumeControl
+    }
+
+    /// `mode`, checked against what the source offers now: if the notch
+    /// passes to the system source with the slider or controls open, they go.
+    private var shownMode: MediaHeaderMode {
+        switch mode {
+        case .volume where !module.showsVolumeControl, .controls where !hasSecondary:
+            return .track
+        default:
+            return mode
+        }
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: NotchStyle.Spacing.m) {
-            MediaPlayerArtwork(module: module, isPlaying: playing.isPlaying)
-            ZStack {
-                // `showsVolumeControl` re-checked here too: if the notch passes
-                // to the system source with the slider open, the slider goes.
-                if showsSlider && module.showsVolumeControl {
-                    MediaVolumeSlider(module: module) { isDragging in
-                        dragging = isDragging
-                        // Released after the pointer already left: the leave
-                        // was deferred for the drag, so honour it now.
-                        if !isDragging && !pointerInside { setSlider(false) }
+            MediaPlayerArtwork(module: module, isPlaying: playing.isPlaying,
+                               trackKey: MediaArtworkFlip.key(for: playing))
+            HStack(spacing: NotchStyle.Spacing.s) {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if hasSecondary {
+                    MediaMoreButton(isOpen: shownMode != .track) {
+                        setMode(shownMode == .track ? .controls : .track)
                     }
-                    .transition(.opacity)
-                } else {
-                    HStack(spacing: NotchStyle.Spacing.m) {
-                        MediaTrackText(module: module, playing: playing, namespace: namespace)
-                        MediaPlayerControls(module: module, isPlaying: playing.isPlaying) {
-                            if module.prepareVolumeSlider() { setSlider(true) }
-                        }
-                    }
-                    .transition(.opacity)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            // Beside the artwork, not around it: the artwork tracks the
-            // pointer for its own parallax tilt. The same hover tracking,
-            // the one proven to fire in this panel, which is never key.
-            .onContinuousHover { phase in
-                switch phase {
-                case .active:
-                    pointerInside = true
-                case .ended:
-                    pointerInside = false
-                    // A drag that strays off keeps the slider until the
-                    // release; see above.
-                    if !dragging { setSlider(false) }
                 }
             }
         }
         .frame(height: PlayerLayout.artworkSide)
+        .onChange(of: pointerInside) { _, inside in
+            // A drag that strays off keeps the slider until the release;
+            // see below.
+            if !inside && !dragging { setMode(.track) }
+        }
+    }
+
+    /// Stacked, not laid out in a row: during a cross-fade the outgoing and
+    /// incoming views both exist, and in a row they split the width and
+    /// shove each other sideways instead of fading in place.
+    private var content: some View {
+        ZStack(alignment: .leading) {
+            modeView
+        }
+    }
+
+    @ViewBuilder
+    private var modeView: some View {
+        switch shownMode {
+        case .track:
+            MediaTrackText(module: module, playing: playing, namespace: namespace)
+                .transition(.opacity)
+        case .controls:
+            MediaSecondaryControls(
+                module: module,
+                // The header's gap, then half the "more" button.
+                originBeyondTrailing: NotchStyle.Spacing.s + PlayerLayout.secondaryControlSide / 2
+            ) {
+                if module.prepareVolumeSlider() { setMode(.volume) }
+            }
+            // In: no fade, the controls spring out themselves. Out: the
+            // header's ordinary fade.
+            .transition(.asymmetric(insertion: .identity, removal: .opacity))
+        case .volume:
+            MediaVolumeSlider(module: module) { isDragging in
+                dragging = isDragging
+                // Released after the pointer already left: the leave was
+                // deferred for the drag, so honour it now.
+                if !isDragging && !pointerInside { setMode(.track) }
+            }
+            .transition(.opacity)
+        }
     }
 
     /// Instant under Reduce Motion (hard rule 8), a short cross-fade otherwise.
-    private func setSlider(_ on: Bool) {
-        guard showsSlider != on else { return }
-        withAnimation(NotchStyle.motion(.easeInOut(duration: PlayerLayout.volumeSwapDuration))) {
-            showsSlider = on
+    private func setMode(_ next: MediaHeaderMode) {
+        guard mode != next else { return }
+        withAnimation(NotchStyle.motion(.easeInOut(duration: PlayerLayout.headerSwapDuration))) {
+            mode = next
         }
+    }
+}
+
+/// The header's "more" button, which opens and closes the secondary
+/// controls. Brightened while open, so it reads as the way back.
+private struct MediaMoreButton: View {
+    let isOpen: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            Image(systemName: isOpen ? "xmark" : "ellipsis")
+                .font(.system(size: PlayerLayout.moreGlyphSize, weight: .semibold))
+                .frame(width: PlayerLayout.secondaryControlSide,
+                       height: PlayerLayout.secondaryControlSide)
+        }
+        .buttonStyle(NotchIconButtonStyle(size: PlayerLayout.secondaryControlSide))
+        .help(isOpen ? "Hide controls" : "More controls")
+        .accessibilityLabel(isOpen ? "Hide controls" : "More controls")
     }
 }
 
@@ -403,14 +512,34 @@ private struct MediaCaptureHint: View {
 private struct MediaPlayerArtwork: View {
     let module: MediaModule
     let isPlaying: Bool
+    /// The track's identity; a change flips the artwork over.
+    let trackKey: String
+
+    /// The artwork actually drawn, which lags the module's through the first
+    /// half of a flip so the old cover turns away before the new one shows.
+    /// Set on appear; nil only before that, when the module's own is drawn,
+    /// so the first frame never shows an empty placeholder.
+    @State private var shown: MediaArtworkFlip.Face?
+    /// The track `shown` belongs to.
+    @State private var shownKey: String?
+    @State private var angle: Double = 0
+    @State private var flipping = false
+    /// Bumped by every flip, so a superseded flip's completions stand down
+    /// when the user skips again mid-turn.
+    @State private var generation = 0
+
+    private var live: MediaArtworkFlip.Face {
+        MediaArtworkFlip.Face(image: module.artworkImage, palette: module.artworkPalette)
+    }
 
     var body: some View {
+        let face = shown ?? live
         MediaArtworkTapTarget(module: module) {
-            if let image = module.artworkImage {
+            if let image = face.image {
                 // Ken Burns drift, palette glow, and parallax tilt.
                 ArtworkVisualizerView(
                     image: image,
-                    palette: module.artworkPalette,
+                    palette: face.palette,
                     isPlaying: isPlaying,
                     cornerRadius: PlayerLayout.artworkCorner
                 )
@@ -421,6 +550,77 @@ private struct MediaPlayerArtwork: View {
                              corner: PlayerLayout.artworkCorner)
             }
         }
+        // About the vertical centre line, like a card turned over.
+        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0),
+                          perspective: MediaArtworkFlip.perspective)
+        .onAppear {
+            shown = live
+            shownKey = trackKey
+        }
+        .onChange(of: trackKey) { _, _ in flip() }
+        .onChange(of: module.artworkImage) { _, _ in
+            // Artwork that lands after the flip (a fetched cover) or with
+            // no track change goes straight in. Mid-turn it waits: the
+            // flip's midpoint takes whatever is newest. A key that has moved
+            // on means this track's flip is about to start, so wait for it.
+            guard !flipping, shownKey == trackKey else { return }
+            shown = live
+        }
+    }
+
+    /// Turn the old cover edge-on, swap, and turn the new one in.
+    /// Instant under Reduce Motion (hard rule 8).
+    private func flip() {
+        let previous = shown ?? live
+        shownKey = trackKey
+        guard let half = NotchStyle.motion(.easeIn(duration: MediaArtworkFlip.halfDuration)) else {
+            shown = live
+            return
+        }
+        // Freeze what was on screen, not the module's: the new artwork may
+        // arrive in the same update as the new title. `shown` only follows
+        // the module's artwork while the track is unchanged (see above).
+        shown = previous
+        flipping = true
+        generation &+= 1
+        let current = generation
+        withAnimation(half) {
+            angle = 90
+        } completion: {
+            guard generation == current else { return }
+            shown = live
+            angle = -90
+            withAnimation(.easeOut(duration: MediaArtworkFlip.halfDuration * 1.3)) {
+                angle = 0
+            } completion: {
+                guard generation == current else { return }
+                flipping = false
+            }
+        }
+    }
+}
+
+/// The artwork's turn-over on a track change.
+enum MediaArtworkFlip {
+    /// What the artwork shows: the image and the glow drawn from it, swapped
+    /// together so the glow never changes colour under the old cover.
+    struct Face {
+        let image: NSImage?
+        let palette: ArtworkPalette?
+    }
+
+    /// Each half of the turn: away to edge-on, then (a little slower, so it
+    /// lands softly) back in.
+    static let halfDuration: Double = 0.17
+    /// Enough depth that it reads as turning, not squashing.
+    static let perspective: CGFloat = 0.5
+
+    /// A track's identity. Title, artist and album together: a single
+    /// field repeats across tracks too often (live albums, "Intro").
+    static func key(for playing: NowPlaying) -> String {
+        [playing.title, playing.artist, playing.album]
+            .map { $0 ?? "" }
+            .joined(separator: "\u{1F}")
     }
 }
 
@@ -442,56 +642,102 @@ private struct MediaArtworkTapTarget<Label: View>: View {
     }
 }
 
-/// Previous / play / next, with the secondary controls (shuffle, the
-/// heart, volume, repeat) in a quieter row beneath. Each row centres on its
-/// own, so play stays over the middle of whichever secondaries the source
-/// offers. The two rows together are the header's height.
-private struct MediaPlayerControls: View {
+/// Shuffle, the heart, volume and repeat: what the header's "more" button
+/// opens in place of the track's text. Whichever the source offers, in a
+/// fixed order, each centred in an equal share of the width so they spread
+/// evenly across it (user, 2026-10-29) rather than bunching at one end.
+///
+/// They spring out sideways from the "more" button on appear, nearest
+/// first, rather than fading in (user, 2026-10-29): each starts small at
+/// the button's centre and settles into its slot on a relaxed spring.
+/// Instant under Reduce Motion (hard rule 8).
+private struct MediaSecondaryControls: View {
     let module: MediaModule
-    let isPlaying: Bool
+    /// How far past this view's trailing edge the "more" button's centre
+    /// sits: where the controls spring out from.
+    let originBeyondTrailing: CGFloat
     let openVolume: () -> Void
 
-    private var hasSecondary: Bool {
-        module.showsPlaybackModes || module.likedCurrent != nil || module.showsVolumeControl
+    @State private var sprung = false
+
+    private enum Item: Hashable {
+        case shuffle, heart, volume, repeatMode
+    }
+
+    private var items: [Item] {
+        var items: [Item] = []
+        if module.showsPlaybackModes { items.append(.shuffle) }
+        // An absent heart must not still claim a share of the width.
+        if module.likedCurrent != nil { items.append(.heart) }
+        if module.showsVolumeControl { items.append(.volume) }
+        if module.showsPlaybackModes { items.append(.repeatMode) }
+        return items
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: PlayerLayout.transportSpacing) {
-                transportButton("backward.fill", label: "Previous track",
-                                size: PlayerLayout.transportGlyphSize,
-                                side: PlayerLayout.transportButtonSide) {
-                    module.send(.previousTrack)
-                }
-                transportButton(isPlaying ? "pause.fill" : "play.fill",
-                                label: isPlaying ? "Pause" : "Play",
-                                size: PlayerLayout.playGlyphSize,
-                                side: PlayerLayout.playButtonSide) {
-                    module.send(.togglePlayPause)
-                }
-                transportButton("forward.fill", label: "Next track",
-                                size: PlayerLayout.transportGlyphSize,
-                                side: PlayerLayout.transportButtonSide) {
-                    module.send(.nextTrack)
+        let items = items
+        GeometryReader { geo in
+            let slot = geo.size.width / CGFloat(max(items.count, 1))
+            HStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                    // From this slot's centre to the "more" button's.
+                    let travel = geo.size.width - slot * (CGFloat(index) + 0.5)
+                        + originBeyondTrailing
+                    control(item)
+                        .frame(maxWidth: .infinity)
+                        .scaleEffect(sprung ? 1 : PlayerLayout.secondarySpringScale)
+                        .offset(x: sprung ? 0 : travel)
+                        .animation(NotchStyle.motion(PlayerLayout.secondarySpring
+                            .delay(Double(items.count - 1 - index) * PlayerLayout.secondarySpringStagger)),
+                                   value: sprung)
                 }
             }
-            if hasSecondary {
-                HStack(spacing: PlayerLayout.secondarySpacing) {
-                    if module.showsPlaybackModes {
-                        ModeControl(symbol: "shuffle", name: "Shuffle",
-                                    isOn: module.isShuffling,
-                                    accent: module.artworkAccent) { module.toggleShuffle() }
-                    }
-                    MediaFavoriteControl(module: module)
-                    if module.showsVolumeControl {
-                        MediaVolumeButton(volume: module.volume, open: openVolume)
-                    }
-                    if module.showsPlaybackModes {
-                        ModeControl(symbol: "repeat", name: "Repeat",
-                                    isOn: module.isRepeating,
-                                    accent: module.artworkAccent) { module.toggleRepeat() }
-                    }
-                }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .onAppear { sprung = true }
+    }
+
+    @ViewBuilder
+    private func control(_ item: Item) -> some View {
+        switch item {
+        case .shuffle:
+            ModeControl(symbol: "shuffle", name: "Shuffle",
+                        isOn: module.isShuffling,
+                        accent: module.artworkAccent) { module.toggleShuffle() }
+        case .heart:
+            MediaFavoriteControl(module: module)
+        case .volume:
+            MediaVolumeButton(volume: module.volume, open: openVolume)
+        case .repeatMode:
+            ModeControl(symbol: "repeat", name: "Repeat",
+                        isOn: module.isRepeating,
+                        accent: module.artworkAccent) { module.toggleRepeat() }
+        }
+    }
+}
+
+/// Previous / play / next, centred under the wave.
+private struct MediaTransportControls: View {
+    let module: MediaModule
+    let isPlaying: Bool
+
+    var body: some View {
+        HStack(spacing: PlayerLayout.transportSpacing) {
+            transportButton("backward.fill", label: "Previous track",
+                            size: PlayerLayout.transportGlyphSize,
+                            side: PlayerLayout.transportButtonSide) {
+                module.send(.previousTrack)
+            }
+            transportButton(isPlaying ? "pause.fill" : "play.fill",
+                            label: isPlaying ? "Pause" : "Play",
+                            size: PlayerLayout.playGlyphSize,
+                            side: PlayerLayout.playButtonSide) {
+                module.send(.togglePlayPause)
+            }
+            transportButton("forward.fill", label: "Next track",
+                            size: PlayerLayout.transportGlyphSize,
+                            side: PlayerLayout.transportButtonSide) {
+                module.send(.nextTrack)
             }
         }
         .fixedSize()
@@ -746,13 +992,18 @@ private struct MediaVolumeSlider: View {
     }
 }
 
-/// The scrub bar: the spectrum wave across the row, with elapsed and
-/// remaining time either side of it. It advances once a second while the panel
-/// is open; dragging scrubs and releases into a seek, and the elapsed label
-/// follows the finger while it does. The 1s tick exists only while this view
-/// does, i.e. only while the notch is expanded.
+/// The scrub bar and the transport: the spectrum wave across the full
+/// width, and beneath it previous / play / next, centred, with elapsed and
+/// remaining time at the row's two ends. It advances once a second while
+/// the panel is open; dragging scrubs and releases into a seek, and the
+/// elapsed label follows the finger while it does. The 1s tick exists only
+/// while this view does, i.e. only while the notch is expanded.
+///
+/// A track with no duration (a live stream) has no wave and no times, but
+/// keeps the transport.
 private struct MediaProgressBar: View {
     let module: MediaModule
+    let isPlaying: Bool
 
     /// Artwork-derived (never black by construction), peach fallback.
     private var accent: Color { module.artworkAccent ?? .mediaAccent }
@@ -765,22 +1016,30 @@ private struct MediaProgressBar: View {
         let snapshot = module.nowPlaying
         let duration = snapshot?.duration ?? 0
         // The test `MediaModule.drawsSpectrum` makes, so capture runs only
-        // while this row exists.
+        // while the wave exists.
         if snapshot?.hasDuration == true {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let elapsed = scrubFraction.map { $0 * duration }
                     ?? min(snapshot?.elapsedNow(at: context.date) ?? 0, duration)
                 let scrubbing = scrubFraction != nil
-                HStack(spacing: PlayerLayout.waveTimeSpacing) {
-                    MediaTimeLabel(text: PlaybackTime.string(elapsed),
-                                   alignment: .trailing, isScrubbing: scrubbing)
+                VStack(spacing: PlayerLayout.waveTransportSpacing) {
                     track(fraction: duration > 0 ? elapsed / duration : 0,
                           elapsed: elapsed, duration: duration)
-                    MediaTimeLabel(text: "−" + PlaybackTime.string(
-                                        max(0, duration.rounded(.down) - elapsed.rounded(.down))),
-                                   alignment: .leading, isScrubbing: scrubbing)
+                    ZStack {
+                        HStack(spacing: 0) {
+                            MediaTimeLabel(text: PlaybackTime.string(elapsed),
+                                           alignment: .leading, isScrubbing: scrubbing)
+                            Spacer(minLength: 0)
+                            MediaTimeLabel(text: "−" + PlaybackTime.string(
+                                                max(0, duration.rounded(.down) - elapsed.rounded(.down))),
+                                           alignment: .trailing, isScrubbing: scrubbing)
+                        }
+                        MediaTransportControls(module: module, isPlaying: isPlaying)
+                    }
                 }
             }
+        } else {
+            MediaTransportControls(module: module, isPlaying: isPlaying)
         }
     }
 
@@ -838,10 +1097,10 @@ private struct MediaProgressBar: View {
     }
 }
 
-/// Elapsed before the wave, remaining after it, on the wave's own row.
-/// Monospaced digits and a minimum width so the labels never jitter and the
-/// wave never shifts as they count. Drawing only: a label must never take a
-/// click meant for the scrub bar beside it.
+/// Elapsed and remaining, at the two ends of the transport row. Monospaced
+/// digits and a minimum width so the labels never jitter as they count.
+/// Drawing only: a label must never take a click meant for the scrub bar
+/// above it.
 private struct MediaTimeLabel: View {
     let text: String
     let alignment: Alignment
@@ -888,8 +1147,8 @@ enum ScrubGeometry {
     /// `SpectrumEnvelope.maxHeight`, and the row itself was the whole hit
     /// target, so a miss by a few points landed on nothing. Eight points each
     /// way stays inside the `PlayerLayout.sectionSpacing` gap above the row,
-    /// short of the header, and below it reaches only the time labels, which
-    /// take no clicks (`MediaTimeLabels`), short of the lyric line. Both
+    /// short of the header, and inside the `PlayerLayout.waveTransportSpacing`
+    /// gap below it, short of the transport buttons. Both
     /// states get it: a tall wave is no easier to hit at its thin ends than
     /// the flat bar is anywhere.
     nonisolated static let hitOverhang: CGFloat = 8
