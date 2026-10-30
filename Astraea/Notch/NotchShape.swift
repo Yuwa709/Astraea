@@ -318,6 +318,17 @@ private struct AnimatedSilhouette: View {
     /// collapse. Nil until the first layout, when it adopts whatever state
     /// the panel already has instead of animating into it.
     @State private var drawnSoft: Bool?
+    /// The open card's drop shadow, separate from `drawnSoft` because it
+    /// eases in on expand, where the corners snap.
+    @State private var shadowShown = false
+
+    /// The shadow must stay inside the hover halo, the only transparent
+    /// space the panel has around the silhouette: past it, the window edge
+    /// cuts the falloff into a hard line. The falloff reaches about twice
+    /// the radius, so 2 × radius + offset must stay under hoverMargin: 6/3
+    /// overran it and showed the line on a light background (2026-10-29).
+    private static let shadowRadius: CGFloat = 2.5
+    private static let shadowOffset: CGFloat = 1.5
 
     var body: some View {
         let drawn = drawnSoft ?? soft
@@ -326,14 +337,26 @@ private struct AnimatedSilhouette: View {
             bottomRadius: drawn ? NotchShape.expandedBottomRadius : NotchShape.compactBottomRadius
         )
         .fill(Color.black)
-        .onAppear { drawnSoft = soft }
+        .shadow(color: .black.opacity(shadowShown ? 0.6 : 0),
+                radius: Self.shadowRadius, y: Self.shadowOffset)
+        .onAppear {
+            drawnSoft = soft
+            shadowShown = soft
+        }
         .onChange(of: soft) { _, wantsSoft in
             // Hard rule 8: with Reduce Motion on, the frame snaps, so the
-            // corners must snap with it rather than easing on their own.
-            if wantsSoft || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // corners and shadow must snap with it rather than easing.
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 drawnSoft = wantsSoft
+                shadowShown = wantsSoft
+            } else if wantsSoft {
+                drawnSoft = true
+                withAnimation(.easeOut(duration: 0.25)) { shadowShown = true }
             } else {
-                withAnimation(NotchOverlayView.collapseAnimation) { drawnSoft = wantsSoft }
+                withAnimation(NotchOverlayView.collapseAnimation) {
+                    drawnSoft = false
+                    shadowShown = false
+                }
             }
         }
     }

@@ -190,32 +190,25 @@ struct ArtworkVisualizerView: View {
 
     // MARK: - Layers
 
-    /// Two soft radial pools in the artwork's own colours, plus a wash of
-    /// its overall tone. Blurred well past the artwork's edge so it reads as
-    /// light spilling onto the panel rather than a border.
+    /// The artwork's own rounded square, filled leading-to-trailing in its
+    /// colours and lightly blurred, so the light stays just behind the
+    /// image and follows its shape. The earlier radial pools and full-frame
+    /// wash, blurred at 28% of the side, spread into a round cloud far past
+    /// the artwork (user-reported 2026-10-29).
     @ViewBuilder
     private func glow(in size: CGSize) -> some View {
         if let palette {
-            ZStack {
-                RadialGradient(
-                    colors: [palette.leading.opacity(0.55), .clear],
-                    center: .init(x: 0.25, y: 0.35),
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * 0.75
-                )
-                RadialGradient(
-                    colors: [palette.trailing.opacity(0.45), .clear],
-                    center: .init(x: 0.78, y: 0.7),
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * 0.7
-                )
-                palette.overall.opacity(0.18)
-            }
-            // Proportional: a fixed 26pt blur swamped a 60pt thumbnail.
-            .blur(radius: max(8, min(size.width, size.height) * 0.28))
-            .scaleEffect(loopActive ? 1.08 : 1)
-            .animation(loopAnimation, value: loopActive)
-            .allowsHitTesting(false)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [palette.leading.opacity(0.8), palette.trailing.opacity(0.7)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                // Proportional, so the halo hugs a thumbnail and a large tile alike.
+                .blur(radius: max(5, min(size.width, size.height) * 0.11))
+                .scaleEffect(loopActive ? 1.03 : 1)
+                .animation(loopAnimation, value: loopActive)
+                .allowsHitTesting(false)
         }
     }
 
@@ -251,7 +244,8 @@ struct ArtworkVisualizerView: View {
                 perspective: 0.6
             )
             .offset(x: tilt.width * 3, y: tilt.height * 3)
-            .shadow(color: (palette?.overall ?? .black).opacity(0.5), radius: 12)
+            // Tight: the glow carries the colour, this only lifts the edge.
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
     }
 
 }
