@@ -34,7 +34,8 @@ struct AppSettings: Codable, Equatable {
     /// v16: added reopenLastPage.
     /// v17: added windowLayouts.
     /// v18: added hapticsEnabled.
-    static let currentSchemaVersion = 18
+    /// v19: added mediaPlayerLayout.
+    static let currentSchemaVersion = 19
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -65,6 +66,11 @@ struct AppSettings: Codable, Equatable {
     /// default**, for upgraded installs too: it is how every earlier version
     /// behaved. A trackpad without haptics ignores the calls either way.
     var hapticsEnabled: Bool = true
+
+    /// The media page's layout: the 1.5.1 simple player or the 1.5.0
+    /// classic one. **Simple by default**, for upgraded installs too: it is
+    /// what 1.5.1 shows. See `MediaPlayerLayout`.
+    var mediaPlayerLayout: MediaPlayerLayout = .default
 
     // `spotifyClientID` lived here until v4. It was a per-user field, which
     // was the wrong model: the Client ID identifies *Astraea* to Spotify, not
@@ -279,7 +285,7 @@ struct AppSettings: Codable, Equatable {
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
         case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
-        case reopenLastPage, windowLayouts, hapticsEnabled
+        case reopenLastPage, windowLayouts, hapticsEnabled, mediaPlayerLayout
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -368,6 +374,10 @@ struct AppSettings: Codable, Equatable {
         // Absent in v17 and earlier; on is the shipped default.
         hapticsEnabled = (try? container.decode(Bool.self, forKey: .hapticsEnabled))
             ?? true
+        // Absent in v18 and earlier; simple is the shipped default. A layout
+        // this build does not know falls back to it too.
+        mediaPlayerLayout = (try? container.decode(
+            MediaPlayerLayout.self, forKey: .mediaPlayerLayout)) ?? .default
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -494,6 +504,11 @@ struct AppSettings: Codable, Equatable {
             // v18 added hapticsEnabled; the lenient decoder fills true for
             // v17 JSON, which is the on-by-default state every earlier
             // version behaved as. Nothing moves.
+            fallthrough
+        case 18:
+            // v19 added mediaPlayerLayout; the lenient decoder fills simple
+            // for v18 JSON, which is the player v18 (1.5.1) showed. Nothing
+            // moves.
             fallthrough
         default:
             break

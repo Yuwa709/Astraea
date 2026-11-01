@@ -95,6 +95,11 @@ final class MediaModule: NotchModule {
     /// the flags it is derived from, because the player view reads it.
     private(set) var motionArtworkMayPlay = false
 
+    /// Which player screen the expanded view draws, pushed in from
+    /// `AppSettings.mediaPlayerLayout` at launch and on every change in
+    /// Settings. Observable so an open panel redraws; see `setPlayerLayout`.
+    private(set) var playerLayout: MediaPlayerLayout = .default
+
     /// Up Next and favourite, mirrored from the active source.
     private(set) var upNext: UpNextTrack?
     private(set) var likedCurrent: Bool?
@@ -812,6 +817,18 @@ final class MediaModule: NotchModule {
     static func spectrumShouldCapture(isVisible: Bool, displayAsleep: Bool,
                                       screen: ExpandedScreen?) -> Bool {
         isVisible && !displayAsleep && drawsSpectrum(on: screen)
+    }
+
+    // MARK: - Player layout
+
+    /// Applies the Settings choice. The two layouts differ in height, so a
+    /// change reflows the panel through the coordinator, which
+    /// re-measures and applies the Reduce Motion rule (hard rule 8).
+    func setPlayerLayout(_ layout: MediaPlayerLayout) {
+        guard layout != playerLayout else { return }
+        playerLayout = layout
+        Self.logger.notice("Player layout \(layout.rawValue, privacy: .public)")
+        onContentReflow?()
     }
 
     // MARK: - Motion artwork

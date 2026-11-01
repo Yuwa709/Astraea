@@ -1028,6 +1028,33 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.hoverEnterDelay, 0.5)
     }
 
+    // MARK: - v19: Media player layout
+
+    func testV18JSONMigratesToV19WithSimpleLayout() {
+        write(#"{"schemaVersion": 18, "hapticsEnabled": false, "hoverEnterDelay": 0.42, "reopenLastPage": true, "moduleEnablement": {"media": false}}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.mediaPlayerLayout, .simple,
+                       "simple by default, for upgraded installs too: it is what 1.5.1 shows")
+        XCTAssertFalse(settings.hapticsEnabled)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(settings.reopenLastPage)
+        XCTAssertEqual(settings.moduleEnablement, ["media": false])
+    }
+
+    func testMediaPlayerLayoutRoundTrips() {
+        XCTAssertEqual(AppSettings().mediaPlayerLayout, .simple)
+        store().update { $0.mediaPlayerLayout = .classic }
+        XCTAssertEqual(store().settings.mediaPlayerLayout, .classic, "must survive a reload")
+    }
+
+    func testUnknownMediaPlayerLayoutCostsOnlyItself() {
+        write(#"{"schemaVersion": 19, "mediaPlayerLayout": "retro", "hoverEnterDelay": 0.5}"#)
+        let settings = store().settings
+        XCTAssertEqual(settings.mediaPlayerLayout, .simple)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.5)
+    }
+
     // MARK: - Module toggles decode per entry
 
     func testOneMalformedModuleToggleCostsOnlyItself() {

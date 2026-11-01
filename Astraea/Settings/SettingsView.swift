@@ -9,7 +9,7 @@ import Sparkle
 /// Window Layouts has a page of its own: its list of layouts outgrew a row
 /// tucked under a switch on Features.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, features, music, windowLayouts, faceUnlock, about
+    case general, features, layout, music, windowLayouts, faceUnlock, about
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .features: "Features"
+        case .layout: "Layout"
         case .music: "Music"
         case .windowLayouts: "Window Layouts"
         case .faceUnlock: "Face Unlock"
@@ -28,6 +29,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape.fill"
         case .features: "square.grid.2x2.fill"
+        case .layout: "rectangle.split.2x1.fill"
         case .music: "music.note"
         case .windowLayouts: "rectangle.3.group.fill"
         case .faceUnlock: "faceid"
@@ -43,7 +45,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .music: "media"
         case .windowLayouts: "window-layout"
         case .about: "updates"
-        case .general, .features, .faceUnlock: nil
+        case .general, .features, .layout, .faceUnlock: nil
         }
     }
 
@@ -53,6 +55,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         if let feature { return FeatureStyle.style(for: feature).tint }
         switch self {
         case .features: return .blue
+        case .layout: return .purple
         case .faceUnlock: return .green
         default: return .gray
         }
@@ -67,7 +70,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// its own: the app as a whole, then each feature's page, then About.
     /// Every case appears exactly once, in `allCases` order.
     static let groups: [[SettingsSection]] = [
-        [.general, .features],
+        [.general, .features, .layout],
         [.music, .windowLayouts, .faceUnlock],
         [.about],
     ]
@@ -116,6 +119,9 @@ struct SettingsView: View {
     /// adaptor object, so the old `NSApp.delegate as? AppDelegate` lookup
     /// was nil and the toggle did nothing until relaunch. Nil in tests.
     var onPreferMusicOverVideoChange: ((Bool) -> Void)?
+    /// Applies the player layout to the live media module, injected for the
+    /// same reason. Nil in tests.
+    var onMediaPlayerLayoutChange: ((MediaPlayerLayout) -> Void)?
 
     /// Optional because that is the shape `List` selection binds to; the
     /// detail falls back to General so the pane is never blank.
@@ -159,6 +165,9 @@ struct SettingsView: View {
         case .features:
             FeaturesSettingsTab(coordinator: coordinator, settings: settings,
                                 appVolume: appVolume, onOpen: { selection = $0 })
+        case .layout:
+            LayoutSettingsTab(settings: settings,
+                              onMediaPlayerLayoutChange: onMediaPlayerLayoutChange)
         case .music:
             MusicSettingsTab(settings: settings, visualizer: visualizer,
                              appVolume: appVolume,

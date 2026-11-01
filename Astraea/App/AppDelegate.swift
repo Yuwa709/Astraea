@@ -89,6 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// preference can be applied live from Settings. MediaModule owns it as
     /// one of its sources; this is a reference, not ownership.
     private(set) var systemMediaSource: SystemMediaAdapter?
+    /// Held so the Settings player-layout picker can apply live.
+    private(set) var mediaModule: MediaModule?
 
     /// The media sources to register, honouring `SystemMediaAdapter.isRegistered`.
     ///
@@ -192,6 +194,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onQuit: { NSApp.terminate(nil) },
                 onPreferMusicOverVideoChange: { [weak self] on in
                     self?.systemMediaSource?.prefersMusicOverVideo = on
+                },
+                onMediaPlayerLayoutChange: { [weak self] layout in
+                    self?.mediaModule?.setPlayerLayout(layout)
                 }
             ))
             // Closing must not deallocate it; this delegate holds the only
@@ -269,6 +274,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // launch — and so the source is ready the moment `isRegistered`
         // flips, without this wiring having to be rebuilt.
         self.systemMediaSource = systemMedia
+        // Before `onContentReflow` is wired, so applying the stored choice
+        // does not ask the coordinator to re-render before it is ready.
+        media.setPlayerLayout(settings.settings.mediaPlayerLayout)
+        self.mediaModule = media
         media.onLiveActivityRequest = { [weak self] request in
             self?.coordinator.requestLiveActivity(request)
         }

@@ -226,8 +226,17 @@ struct MediaExpandedView: View {
                 MediaFullLyricsView(module: module, namespace: lyricsNamespace)
                     .transition(.opacity)
             case .player(let playing):
-                MediaPlayerScreen(module: module, playing: playing, namespace: lyricsNamespace)
-                    .transition(.opacity)
+                // Settings → Layout → Player layout. The classic screen is the 1.5.0
+                // player, in MediaClassicViews.swift.
+                switch module.playerLayout {
+                case .simple:
+                    MediaPlayerScreen(module: module, playing: playing, namespace: lyricsNamespace)
+                        .transition(.opacity)
+                case .classic:
+                    MediaClassicPlayerScreen(module: module, playing: playing,
+                                             namespace: lyricsNamespace)
+                        .transition(.opacity)
+                }
             case .permissionDenied:
                 // The tested denied path: one line, no re-prompt loop.
                 HStack(spacing: NotchStyle.Spacing.s) {
