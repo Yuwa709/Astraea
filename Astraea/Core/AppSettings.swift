@@ -35,7 +35,8 @@ struct AppSettings: Codable, Equatable {
     /// v17: added windowLayouts.
     /// v18: added hapticsEnabled.
     /// v19: added mediaPlayerLayout.
-    static let currentSchemaVersion = 19
+    /// v20: removed capybaraThemeEnabled — no view ever read it.
+    static let currentSchemaVersion = 20
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -125,10 +126,6 @@ struct AppSettings: Codable, Equatable {
     /// the Keychain is asked at most once per install, ever.
     var spotifyKeychainCleanupPending = false
 
-    /// Capybara theme on the scrub bar: a sprite walks the track as it
-    /// plays, towards a finish flag. Off by default — it is decoration, and
-    /// a theme nobody chose must not switch itself on across an upgrade.
-    var capybaraThemeEnabled: Bool = false
 
     /// The mixer's per-app volume (`docs/FUTURE-audio-mixer.md`). Absent in
     /// v8 and earlier, which decodes as an empty `AppVolume`: taps off, every
@@ -283,7 +280,7 @@ struct AppSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, moduleEnablement, hoverEnterDelay, visualizerEnabled
         case showMenuBarIcon, preferMusicOverVideo, spotifyKeychainCleanupPending
-        case capybaraThemeEnabled, appVolume, faceUnlockAutoLockInterval
+        case appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
         case reopenLastPage, windowLayouts, hapticsEnabled, mediaPlayerLayout
     }
@@ -342,9 +339,8 @@ struct AppSettings: Codable, Equatable {
                 Bool.self, forKey: .spotifyAccountConnected)
             spotifyKeychainCleanupPending = wasConnected != false
         }
-        // Absent in v7 and earlier; off is the shipped default.
-        capybaraThemeEnabled = (try? container.decode(Bool.self, forKey: .capybaraThemeEnabled))
-            ?? false
+        // A v8...v19 payload still carries capybaraThemeEnabled. It has no
+        // CodingKey any more, so it is ignored, like spotifyClientID above.
         // Absent in v8 and earlier; empty is the shipped default. `try?`
         // also catches a value that is not an object at all.
         appVolume = (try? container.decode(AppVolume.self, forKey: .appVolume))
@@ -443,8 +439,7 @@ struct AppSettings: Codable, Equatable {
             // case 10.
             fallthrough
         case 7:
-            // v8 added capybaraThemeEnabled; the lenient decoder fills false
-            // for v7 JSON, which is the off-by-default state. Nothing moves.
+            // v8 added capybaraThemeEnabled. v20 removed it; see case 19.
             fallthrough
         case 8:
             // v9 added appVolume; the lenient decoder fills an empty one for
@@ -509,6 +504,12 @@ struct AppSettings: Codable, Equatable {
             // v19 added mediaPlayerLayout; the lenient decoder fills simple
             // for v18 JSON, which is the player v18 (1.5.1) showed. Nothing
             // moves.
+            fallthrough
+        case 19:
+            // v20 removed capybaraThemeEnabled. Nothing to move, and dropping
+            // it is not a silent wipe: no view ever read the flag and no
+            // Settings control ever exposed it, so whatever it held changed
+            // nothing the user could see.
             fallthrough
         default:
             break

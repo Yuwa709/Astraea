@@ -293,11 +293,9 @@ final class AppSettingsTests: XCTestCase {
         }
     }
 
-    // MARK: - v8: the capybara theme
+    // MARK: - v8: the capybara theme (removed in v20)
 
-    /// CLAUDE.md's rule again: real v7 JSON must load with nothing dropped,
-    /// and the new flag must arrive OFF — a theme nobody chose must not
-    /// switch itself on across an upgrade.
+    /// CLAUDE.md's rule again: real v7 JSON must load with nothing dropped.
     func testV7JSONMigratesToV8WithNothingDropped() throws {
         write("""
         {"schemaVersion": 7,
@@ -321,13 +319,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending, "a stored token is queued for cleanup")
-        XCTAssertFalse(settings.capybaraThemeEnabled, "the new field arrives OFF")
-    }
-
-    func testCapybaraThemeDefaultsOffAndRoundTrips() {
-        XCTAssertFalse(AppSettings().capybaraThemeEnabled)
-        store().update { $0.capybaraThemeEnabled = true }
-        XCTAssertTrue(store().settings.capybaraThemeEnabled, "must survive a reload")
     }
 
     // MARK: - v9: app volume
@@ -357,7 +348,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         // And the new struct arrives empty.
         XCTAssertNil(settings.appVolume.tapsEnabled, "taps arrive off: a capture permission is opt-in")
         XCTAssertNil(settings.appVolume.volumes, "no app arrives turned down")
@@ -430,7 +420,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true, "taps stay on across the upgrade")
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60],
                        "every saved volume survives")
@@ -486,7 +475,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.visualizerEnabled)
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -564,7 +552,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -660,7 +647,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -718,7 +704,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -806,7 +791,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -875,7 +859,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -935,7 +918,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.showMenuBarIcon)
         XCTAssertFalse(settings.preferMusicOverVideo)
         XCTAssertTrue(settings.spotifyKeychainCleanupPending)
-        XCTAssertTrue(settings.capybaraThemeEnabled)
         XCTAssertEqual(settings.appVolume.tapsEnabled, true)
         XCTAssertEqual(settings.appVolume.volumes, ["com.hnc.Discord": 35, "webkit": 60])
         XCTAssertEqual(settings.appVolume.outputs, ["com.hnc.Discord": "usb-uid"])
@@ -1055,6 +1037,27 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.hoverEnterDelay, 0.5)
     }
 
+    // MARK: - v20: capybara theme removed
+
+    /// A v19 payload still holding the removed flag loads with everything
+    /// else intact, and the next save no longer writes the key.
+    func testV19JSONMigratesToV20DroppingOnlyTheCapybaraFlag() throws {
+        write(#"{"schemaVersion": 19, "capybaraThemeEnabled": true, "mediaPlayerLayout": "classic", "hapticsEnabled": false, "hoverEnterDelay": 0.42, "moduleEnablement": {"media": false}}"#)
+        let subject = store()
+        let settings = subject.settings
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.mediaPlayerLayout, .classic)
+        XCTAssertFalse(settings.hapticsEnabled)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertEqual(settings.moduleEnablement, ["media": false])
+        XCTAssertNil(defaults.data(forKey: SettingsStore.salvageKey), "nothing was unreadable")
+
+        subject.update { $0.hoverEnterDelay = 0.5 }
+        let saved = try XCTUnwrap(defaults.data(forKey: SettingsStore.storageKey))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        XCTAssertNil(json["capybaraThemeEnabled"], "the removed key is not written back")
+    }
+
     // MARK: - Module toggles decode per entry
 
     func testOneMalformedModuleToggleCostsOnlyItself() {
@@ -1108,7 +1111,6 @@ final class AppSettingsTests: XCTestCase {
         let subject = store()
         XCTAssertEqual(subject.settings.moduleEnablement["stats"], false)
         XCTAssertEqual(subject.settings.hoverEnterDelay, 0.5)
-        XCTAssertTrue(subject.settings.capybaraThemeEnabled)
         let key = SettingsStore.newerSchemaKey(newer)
         XCTAssertEqual(defaults.data(forKey: key), original,
                        "preserved at load, before any write")
