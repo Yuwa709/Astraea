@@ -52,6 +52,9 @@ final class NotchCoordinator {
         case clipboard
         case fileShelf
         case systemStats
+        /// The stats page's second screen: apps ranked by what they use.
+        /// Reached only from the stats page, and Back returns there.
+        case resourceUsage
         case appVolume
         /// The window layout picker. No door leads here: only a window
         /// dragged into the notch opens it.
@@ -64,10 +67,36 @@ final class NotchCoordinator {
             case .standby: nil
             case .clipboard: "clipboard"
             case .fileShelf: "file-shelf"
-            case .systemStats: "system-stats"
+            case .systemStats, .resourceUsage: "system-stats"
             case .appVolume: "app-volume"
             case .windowLayout: "window-layout"
             }
+        }
+
+        /// Where the back chevron leads: one level up.
+        var parent: Destination {
+            self == .resourceUsage ? .systemStats : .standby
+        }
+
+        /// The stats page and the screen under it share the stats services,
+        /// which keep sampling across the hop between them.
+        var isStatsPage: Bool { self == .systemStats || self == .resourceUsage }
+
+        /// A screen whose title rides in the chrome band beside Back, the
+        /// way System Settings titles a pane, rather than in a header row
+        /// of its own: the glyph and the title.
+        var bandTitle: (symbol: String, title: String)? {
+            switch self {
+            case .systemStats: ("cpu.fill", "System Stats")
+            case .resourceUsage: ("gauge.with.dots.needle.67percent", "Resource Usage")
+            default: nil
+            }
+        }
+
+        /// The gap under the neck. A screen titled in the band has no
+        /// header to space, so its first card sits closer.
+        var contentTopGap: CGFloat {
+            bandTitle == nil ? NotchOverlayView.defaultContentTopGap : 10
         }
     }
 
@@ -78,10 +107,14 @@ final class NotchCoordinator {
     struct StatsPageServices {
         let stats: SystemStatsService
         let battery: BatteryService
+        /// The resource page's sampler. Nil hides the stats page's button.
+        let resources: ResourceUsageService?
 
-        init(stats: SystemStatsService, battery: BatteryService) {
+        init(stats: SystemStatsService, battery: BatteryService,
+             resources: ResourceUsageService? = nil) {
             self.stats = stats
             self.battery = battery
+            self.resources = resources
         }
     }
 
@@ -97,8 +130,12 @@ final class NotchCoordinator {
     private(set) var destination: Destination = .standby {
         didSet {
             guard oldValue != destination else { return }
-            if oldValue == .systemStats { setStatsPageObserving(false) }
-            if destination == .systemStats { setStatsPageObserving(true) }
+            if oldValue.isStatsPage, !destination.isStatsPage { setStatsPageObserving(false) }
+            if destination.isStatsPage, !oldValue.isStatsPage { setStatsPageObserving(true) }
+            // The resource page samples only while it is the screen: leaving
+            // it, by Back or by the collapse reset, stops the loop.
+            if oldValue == .resourceUsage { statsPage?.resources?.stop() }
+            if destination == .resourceUsage { statsPage?.resources?.start() }
             // Not a sampling lifecycle: watching is toggle-driven and
             // event-driven. This re-prunes the session rows, so an app that
             // quit since the last audio event is not still listed, and reads
@@ -652,13 +689,14 @@ final class NotchCoordinator {
     /// Measures what the expanded panel is about to display by laying the
     /// same padded content out in a throwaway hosting view. Synchronous and
     /// cheap at this size; runs only on content changes, never per frame.
-    private func measureExpandedContent(_ content: AnyView?, neck: CGFloat) -> CGSize {
+    private func measureExpandedContent(_ content: AnyView?, neck: CGFloat,
+                                        topGap: CGFloat = NotchOverlayView.defaultContentTopGap) -> CGSize {
         guard let content else { return .zero }
         // Padding mirrors NotchOverlayView's exactly, or the measured panel
         // will not fit the rendered content.
         let probe = NSHostingView(rootView:
             content
-                .padding(.top, neck + 20)
+                .padding(.top, neck + topGap)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 20)
         )
@@ -759,7 +797,8 @@ final class NotchCoordinator {
             // all, on the flag — an "empty" view still carries neck+40 of
             // fixed padding, which is taller than the whole chrome-only bar.
             let view = content(for: arbiter.presentation) ?? AnyView(EmptyView())
-            expandedContentSize = measureExpandedContent(view, neck: neck)
+            let topGap = chromeOnly ? NotchOverlayView.defaultContentTopGap : destination.contentTopGap
+            expandedContentSize = measureExpandedContent(view, neck: neck, topGap: topGap)
             let leading = leadingAccessory()
             let trailing = trailingAccessory()
             chromeGroups = NotchPanel.ChromeGroupWidths(
@@ -801,7 +840,8 @@ final class NotchCoordinator {
                              chromeOnly: chromeOnly,
                              reveal: entering,
                              topLeadingAccessory: leading,
-                             topTrailingAccessory: trailing)
+                             topTrailingAccessory: trailing,
+                             contentTopGap: topGap)
         case .compact, .peek:
             // A peek shows what it grew from: the wings, or nothing.
             isChromeOnly = false
@@ -823,8 +863,14 @@ final class NotchCoordinator {
     /// into Settings while in standby.
     private func leadingAccessory() -> AnyView? {
         guard destination == .standby else {
-            return AnyView(PanelChromeButton(symbol: "chevron.backward", help: "Back") {
-                [weak self] in self?.navigate(to: .standby)
+            let parent = destination.parent
+            let back = PanelChromeButton(symbol: "chevron.backward", help: "Back") {
+                [weak self] in self?.navigate(to: parent)
+            }
+            guard let title = destination.bandTitle else { return AnyView(back) }
+            return AnyView(HStack(spacing: 4) {
+                back
+                PanelBandTitle(symbol: title.symbol, title: title.title)
             })
         }
         // Settings first, then a door per enabled screen. Doors are
@@ -979,8 +1025,20 @@ final class NotchCoordinator {
                 // falls through to standby rather than showing a dead screen.
                 if destination == .systemStats, let statsPage,
                    isDoorAvailable(.systemStats) {
+                    let showResources: (() -> Void)? = statsPage.resources == nil ? nil : {
+                        [weak self] in self?.navigate(to: .resourceUsage)
+                    }
                     return AnyView(SystemStatsPageView(stats: statsPage.stats,
-                                                       battery: statsPage.battery))
+                                                       battery: statsPage.battery,
+                                                       onShowResources: showResources))
+                }
+                // Composed here for the same reason; with no sampler the
+                // generic branch would show the module's unrelated view, so
+                // this destination falls through to the stack instead.
+                if destination == .resourceUsage {
+                    if let resources = statsPage?.resources, isDoorAvailable(.resourceUsage) {
+                        return AnyView(ResourceUsagePageView(service: resources))
+                    }
                 }
                 // The mixer page, composed here like the stats page: the
                 // engine is AppDelegate's service, not the module's
@@ -996,7 +1054,8 @@ final class NotchCoordinator {
                 // A navigated screen replaces the arbitrated stack wholesale.
                 // Falls through if its module got disabled underneath it, so
                 // the panel can never show a screen whose feature is off.
-                else if let moduleID = destination.moduleID,
+                else if destination != .resourceUsage,
+                        let moduleID = destination.moduleID,
                         let module = arbiter.module(for: moduleID), module.isEnabled {
                     return module.makeExpandedView()
                 }

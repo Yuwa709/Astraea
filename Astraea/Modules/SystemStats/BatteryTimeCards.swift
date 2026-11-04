@@ -5,17 +5,18 @@ import SwiftUI
 ///
 /// Both times always have a column, plugged in or not — each says why when
 /// it has no number, rather than disappearing.
+///
+/// Grouped by space alone (2026-11-04): no rule under the bar and no
+/// hairlines between the columns, which read as a table drawn inside a
+/// card. The bar ends the summary; the figures sit a step below it.
 struct BatteryOverviewCard: View {
     let snapshot: BatterySnapshot?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             BatteryChargeSummary(snapshot: snapshot)
             BatteryLevelBar(snapshot: snapshot)
-            Rectangle()
-                .fill(NotchStyle.Fill.separator)
-                .frame(height: 1)
-                .padding(.vertical, 2)
+                .padding(.bottom, 4)
             BatteryTimeFigures(snapshot: snapshot)
         }
         .notchCard()
@@ -44,6 +45,9 @@ struct BatteryChargeSummary: View {
                     .font(NotchStyle.Font.bodyEmphasis)
                     .foregroundStyle(NotchStyle.Ink.primary)
             }
+            // Beside the state it qualifies; the page has no header to
+            // carry it since the title moved into the chrome band.
+            if snapshot?.isLowPowerMode == true { LowPowerBadge() }
             Spacer(minLength: NotchStyle.Spacing.s)
             if !charge.isEmpty {
                 Text(charge)
@@ -93,7 +97,7 @@ struct BatteryLevelBar: View {
                 }
             }
         }
-        .frame(height: 8)
+        .frame(height: 6)
         .animation(NotchStyle.motion(), value: snapshot?.percentage)
         .accessibilityHidden(true)
     }
@@ -108,7 +112,7 @@ struct BatteryLevelBar: View {
 }
 
 /// The battery card's lower half: until full, until empty, and power, as
-/// three columns split by hairlines.
+/// three equal columns.
 struct BatteryTimeFigures: View {
     let snapshot: BatterySnapshot?
 
@@ -117,18 +121,12 @@ struct BatteryTimeFigures: View {
             let full = BatteryTime.untilFull(snapshot)
             let empty = BatteryTime.untilEmpty(snapshot)
             StatFigure(title: "Until full", value: full.value, detail: full.detail)
-            hairline
             StatFigure(title: "Until empty", value: empty.value, detail: empty.detail)
-            hairline
             StatFigure(title: "Power",
                        value: power.map { String(format: "%.1f W", $0) } ?? "—",
                        detail: powerDetail)
         }
         .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var hairline: some View {
-        Rectangle().fill(NotchStyle.Fill.separator).frame(width: 1)
     }
 
     /// The Mac's whole draw when the hardware reports it, which is what the

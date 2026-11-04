@@ -2,11 +2,15 @@ import SwiftUI
 
 /// The stats door: everything the data layer already reads, on one screen.
 ///
-/// Three bands, most-wanted first. The battery card: the charge, a level
-/// bar, and how long until full and until empty, which is what someone
-/// opening the page came to see. Then the pack's long-term figures beside
-/// the adapter. Then the machine's usage. Reads only what `BatteryService`
-/// and `SystemStatsService` publish; this view adds no IOKit of its own.
+/// The battery card across the top: the charge, a level bar, and how long
+/// until full and until empty, which is what someone opening the page came
+/// to see. Under it two equal cards side by side: the machine's usage, whose
+/// last row leads to the apps behind it, and the pack's long-term figures
+/// beside the adapter. Reads only what `BatteryService` and
+/// `SystemStatsService` publish; this view adds no IOKit of its own.
+///
+/// No header: the title rides in the chrome band beside Back (2026-11-04),
+/// so the first card sits just under the neck.
 ///
 /// No history: the page shows now. A 24-hour charge graph lived here until
 /// 2026-10-07, filled only while the page was open, and so was always empty.
@@ -19,6 +23,8 @@ struct SystemStatsPageView: View {
 
     let stats: SystemStatsService
     let battery: BatteryService
+    /// Opens the resource page; nil hides its row.
+    var onShowResources: (() -> Void)?
 
     /// 560pt. With the overlay's 32pt side border either side the panel comes
     /// to 624pt, inside the 690 ceiling with 66pt to spare — unlike the
@@ -27,38 +33,56 @@ struct SystemStatsPageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchStyle.Spacing.m) {
-            // Same glyph as the feature's switch in Settings.
-            NotchPageHeader(symbol: "cpu.fill", title: "System Stats") {
-                if battery.snapshot?.isLowPowerMode == true { LowPowerBadge() }
-            }
             BatteryOverviewCard(snapshot: battery.snapshot)
-            BatteryDetailRow(snapshot: battery.snapshot)
-            VStack(alignment: .leading, spacing: 6) {
-                NotchSectionLabel("Usage")
-                SystemStatsMachineRows(stats: stats.stats)
+            HStack(alignment: .top, spacing: NotchStyle.Spacing.s) {
+                StatsSection("Usage") {
+                    SystemStatsMachineRows(stats: stats.stats, onShowResources: onShowResources)
+                }
+                StatsSection("Battery Details") {
+                    BatteryDetailsGrid(snapshot: battery.snapshot)
+                }
             }
+            // Both cards take the taller one's height, so their bottoms meet.
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: Self.contentWidth, alignment: .leading)
         .foregroundStyle(NotchStyle.Ink.primary)
     }
 }
 
-/// The pack's long-term figures on one card, the adapter on its own: what
-/// the battery is, beside what is feeding it.
+/// A labelled card that fills its share of the row, width and height.
+private struct StatsSection<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            NotchSectionLabel(title)
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .notchCard()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// The pack's long-term figures and the adapter, two by two: what the
+/// battery is, beside what is feeding it.
 ///
-/// Condition is macOS's verdict and keeps its own column and provenance
+/// Condition is macOS's verdict and keeps its own cell and provenance
 /// line, so it is never read as the same number as Capacity, which is a
 /// ratio Astraea computes. Absent rather than guessed when the system
 /// declines to say.
-struct BatteryDetailRow: View {
+struct BatteryDetailsGrid: View {
     let snapshot: BatterySnapshot?
 
-    /// The adapter card's width; the health card takes the rest, so its
-    /// three columns come out about as wide as this one.
-    private static let adapterWidth: CGFloat = 134
-
     var body: some View {
-        HStack(alignment: .top, spacing: NotchStyle.Spacing.s) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: NotchStyle.Spacing.m) {
                 StatFigure(title: "Capacity",
                            value: snapshot?.displayHealthPercent.map { "\(Int($0.rounded()))%" } ?? "—",
@@ -69,17 +93,17 @@ struct BatteryDetailRow: View {
                 StatFigure(title: "Cycles",
                            value: snapshot?.cycleCount.map { "\($0)" } ?? "—",
                            detail: "Charge cycles")
+            }
+            // The two rows split the card's height, so the grid's last
+            // line meets the usage card's last row across the gap.
+            Spacer(minLength: NotchStyle.Spacing.m)
+            HStack(alignment: .top, spacing: NotchStyle.Spacing.m) {
                 StatFigure(title: "Condition",
                            value: snapshot?.conditionDescription ?? "Not reported",
                            detail: "Reported by macOS")
+                StatFigure(title: "Adapter", value: adapterValue, detail: adapterDetail)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .notchCard()
-            StatFigure(title: "Adapter", value: adapterValue, detail: adapterDetail)
-                .notchCard()
-                .frame(width: Self.adapterWidth)
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// What the percentage is made of: today's full charge against the
@@ -116,7 +140,7 @@ struct StatFigure: View {
                 .font(NotchStyle.Font.captionEmphasis)
                 .foregroundStyle(NotchStyle.Ink.tertiary)
             Text(value)
-                .font(NotchStyle.Font.metric)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(NotchStyle.Ink.primary)
                 .monospacedDigit()
                 .lineLimit(1)

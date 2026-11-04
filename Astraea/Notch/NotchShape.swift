@@ -129,6 +129,9 @@ struct NotchOverlayView: View {
     /// Where everything sits and what the silhouette is morphing to. Owned
     /// by `NotchPanel`; see `NotchMorphGeometry`.
     var geometry = NotchMorphGeometry()
+    /// The gap between the neck and the content. 20 by default; a page
+    /// whose title rides in the chrome band needs no header and less gap.
+    var contentTopGap: CGFloat = NotchOverlayView.defaultContentTopGap
 
     var body: some View {
         // The root always takes exactly the window's size: every layer is
@@ -161,7 +164,7 @@ struct NotchOverlayView: View {
                 // Horizontal padding is the panel's visible side border;
                 // keep in lockstep with the coordinator's measuring probe.
                 content
-                    .padding(.top, neckHeight + 20)
+                    .padding(.top, neckHeight + contentTopGap)
                     .padding(.horizontal, Self.contentSideInset)
                     .padding(.bottom, 20)
                     .modifier(RevealFromNotch(enabled: revealContent))
@@ -378,6 +381,7 @@ extension NotchOverlayView {
     /// hardcodes the same 32 — they disagree and the measured panel no longer
     /// fits the rendered content.
     nonisolated static let contentSideInset: CGFloat = 32
+    nonisolated static let defaultContentTopGap: CGFloat = 20
 
     /// The chrome band sits nearer the corners than the content column does
     /// (user-requested). Its own constant rather than a smaller

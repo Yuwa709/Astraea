@@ -30,3 +30,27 @@ struct PanelChromeButton: View {
         .accessibilityAddTraits(isActive ? [] : .isSelected)
     }
 }
+
+/// A screen's title in the chrome band, just after Back: the feature's
+/// glyph and its name, as System Settings titles a pane beside its back
+/// button. Text, not a control; the header for VoiceOver.
+struct PanelBandTitle: View {
+    let symbol: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(NotchStyle.Ink.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(NotchStyle.Font.title)
+                .foregroundStyle(NotchStyle.Ink.primary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}

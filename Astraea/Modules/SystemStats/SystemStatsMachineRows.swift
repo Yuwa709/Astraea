@@ -1,27 +1,37 @@
 import SwiftUI
 
-/// CPU, GPU, memory and disk on one card at the foot of the stats page, as
-/// a two-by-two grid of labelled level bars.
+/// CPU, GPU, memory and disk, one labelled level bar each, stacked in the
+/// stats page's Usage card; the card itself is the page's (`StatsSection`).
 ///
 /// A stat that cannot be read is shown as a dash with no bar, matching
 /// `SystemStats`'s rule that a missing reading is never rendered as zero.
 /// The bars are neutral white: a load has no good or bad colour here.
+///
+/// The card's last row leads to the resource page: a grouped-list row with
+/// a hairline above and a chevron, the way Settings leads from a summary to
+/// its detail, rather than a bordered button inside the card.
 struct SystemStatsMachineRows: View {
     let stats: SystemStats
+    /// Opens the resource page. Nil hides the row, where no resource
+    /// service is wired up.
+    var onShowResources: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: NotchStyle.Spacing.l) {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
                 MachineStatRow(title: "CPU", symbol: "cpu", fraction: stats.cpuFraction)
                 MachineStatRow(title: "GPU", symbol: "cpu.fill", fraction: stats.gpuFraction)
-            }
-            HStack(spacing: NotchStyle.Spacing.l) {
                 MachineStatRow(title: "Memory", symbol: "memorychip", fraction: stats.memoryFraction)
                 MachineStatRow(title: "Disk", symbol: "internaldrive",
                                fraction: diskFraction, trailing: diskDetail)
             }
+            if let onShowResources {
+                // Pinned to the card's foot when the neighbouring card is
+                // the taller one.
+                Spacer(minLength: 10)
+                ResourceUsageRow(action: onShowResources)
+            }
         }
-        .notchCard()
     }
 
     private var diskFraction: Double? {
@@ -83,5 +93,47 @@ struct MachineStatRow: View {
 
     private var value: String {
         trailing ?? fraction.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+    }
+}
+
+/// The way into the resource page: the Usage card's last row. A hairline
+/// across the card, then the label and a trailing chevron. Clear at rest,
+/// the shared hover fill under the pointer; its highlight runs past the
+/// text to the card's padding, as a list row's does.
+struct ResourceUsageRow: View {
+    let action: () -> Void
+
+    /// Out into the card's 12pt padding, less a margin for the corners.
+    private static let bleed: CGFloat = 6
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Rectangle()
+                .fill(NotchStyle.Fill.separator)
+                .frame(height: 1)
+            Button(action: action) {
+                HStack(spacing: NotchStyle.Spacing.s) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 11))
+                        .foregroundStyle(NotchStyle.Ink.tertiary)
+                        .frame(width: 14)
+                    Text("Resource Usage")
+                        .font(NotchStyle.Font.captionEmphasis)
+                        .foregroundStyle(NotchStyle.Ink.secondary)
+                    Spacer(minLength: NotchStyle.Spacing.s)
+                    Image(systemName: "chevron.forward")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NotchStyle.Ink.tertiary)
+                }
+                .padding(.horizontal, Self.bleed)
+                .frame(height: 24)
+            }
+            .buttonStyle(NotchRowButtonStyle(radius: NotchStyle.Radius.thumb, resting: .clear))
+            .padding(.horizontal, -Self.bleed)
+            .padding(.bottom, -4)
+            .help("Apps ranked by energy, memory and CPU")
+            .accessibilityLabel("Resource usage")
+            .accessibilityHint("Shows apps ranked by energy, memory and CPU use")
+        }
     }
 }

@@ -78,7 +78,8 @@ final class NotchPanel: NSPanel {
         chromeOnly: Bool = false,
         reveal: Bool = false,
         topLeadingAccessory: AnyView? = nil,
-        topTrailingAccessory: AnyView? = nil
+        topTrailingAccessory: AnyView? = nil,
+        contentTopGap: CGFloat = NotchOverlayView.defaultContentTopGap
     ) {
         // Leaving the open panel or the HUD, what was showing stays until
         // the edge has closed over it (`settleMorph` lets it go): a
@@ -117,7 +118,8 @@ final class NotchPanel: NSPanel {
             panelWidth: panelWidth,
             chromeGroups: chromeGroups,
             chromeOnly: chromeOnly,
-            geometry: geometry
+            geometry: geometry,
+            contentTopGap: contentTopGap
         )
     }
 

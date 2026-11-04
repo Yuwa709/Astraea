@@ -29,8 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// opens — the coordinator starts and stops them on the destination —
     /// so creating them here costs nothing at launch.
     private let batteryService = BatteryService()
+    /// The stats page's resource screen. Holds no task until that screen
+    /// opens, like the two above.
+    private let resourceService = ResourceUsageService()
     private lazy var statsPage = NotchCoordinator.StatsPageServices(
-        stats: statsService, battery: batteryService)
+        stats: statsService, battery: batteryService, resources: resourceService)
     private let clipboardService = ClipboardService()
     private let fileShelfService = FileShelfService()
     /// App-level. The control renders as panel chrome via the coordinator,

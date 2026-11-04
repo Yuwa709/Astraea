@@ -174,6 +174,9 @@ struct NotchSegmentedControl<Value: Hashable>: View {
 
     @Binding var selection: Value
     let segments: [Segment]
+    /// Every segment this wide, as the HIG prefers; nil sizes each to its
+    /// label.
+    var segmentWidth: CGFloat?
 
     var body: some View {
         HStack(spacing: 2) {
@@ -190,7 +193,7 @@ struct NotchSegmentedControl<Value: Hashable>: View {
                     }
                     .foregroundStyle(isSelected ? NotchStyle.Ink.primary : NotchStyle.Ink.tertiary)
                     .padding(.horizontal, 10)
-                    .frame(height: 22)
+                    .frame(width: segmentWidth, height: 22)
                     .background(Capsule().fill(isSelected ? NotchStyle.Fill.selected : .clear))
                     .contentShape(Capsule())
                 }
