@@ -179,10 +179,10 @@ private struct ResourceAppRow: View {
     }
 }
 
-/// A small filled capsule, the App Store's row-button shape: a quiet fill
-/// at rest, brighter under the pointer. Neutral, not red: quitting is the
-/// user's ordinary choice here, and the app itself still asks about
-/// unsaved work.
+/// Just the word, no capsule: a list of apps reads as a list, not a rack
+/// of buttons. Secondary ink at rest, primary under the pointer, dimmer
+/// while pressed. The hit region is the whole 64pt slot and the row's
+/// height, well past the visible word.
 private struct ResourceQuitButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ResourceQuitButtonBody(configuration: configuration)
@@ -195,18 +195,14 @@ private struct ResourceQuitButtonBody: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = Capsule()
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(!isEnabled ? NotchStyle.Ink.tertiary
+            .font(NotchStyle.Font.captionEmphasis)
+            .foregroundStyle(!isEnabled || configuration.isPressed ? NotchStyle.Ink.tertiary
                              : hovering ? NotchStyle.Ink.primary : NotchStyle.Ink.secondary)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, 11)
-            .frame(height: 22)
-            .background(shape.fill(configuration.isPressed ? NotchStyle.Ink.quaternary
-                                   : isEnabled && hovering ? NotchStyle.Fill.selected : NotchStyle.Fill.hover))
-            .contentShape(shape)
+            .frame(width: 64, height: ResourceUsagePageView.rowHeight, alignment: .trailing)
+            .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(NotchStyle.hoverMotion, value: hovering)
     }

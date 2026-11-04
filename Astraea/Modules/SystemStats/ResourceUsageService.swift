@@ -39,6 +39,7 @@ final class ResourceUsageService {
 
     /// The system's own shell apps. Quitting them restarts them or leaves
     /// the session without its desktop, so the page offers no button.
+    /// Astraea itself is quittable: its row is the quickest way out.
     @ObservationIgnored nonisolated static let protectedBundleIDs: Set<String> = [
         "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
         "com.apple.systemuiserver", "com.apple.controlcenter",
@@ -206,7 +207,6 @@ final class ResourceUsageService {
     /// life, so the verdict is kept per object and only a new process is
     /// looked up; the cache holds only processes still running.
     private func runningApps() -> [ResourceApp] {
-        let me = ProcessInfo.processInfo.processIdentifier
         var next: [pid_t: (object: NSRunningApplication, app: ResourceApp?)] = [:]
         var result: [ResourceApp] = []
         for running in NSWorkspace.shared.runningApplications {
@@ -216,7 +216,7 @@ final class ResourceUsageService {
             if let cached = appCache[pid], cached.object === running {
                 app = cached.app
             } else {
-                app = Self.resourceApp(running, me: me)
+                app = Self.resourceApp(running)
             }
             next[pid] = (running, app)
             if let app { result.append(app) }
@@ -225,7 +225,7 @@ final class ResourceUsageService {
         return result
     }
 
-    private static func resourceApp(_ running: NSRunningApplication, me: pid_t) -> ResourceApp? {
+    private static func resourceApp(_ running: NSRunningApplication) -> ResourceApp? {
         guard !running.isTerminated else { return nil }
         let bundleID = running.bundleIdentifier
         switch running.activationPolicy {
@@ -238,8 +238,7 @@ final class ResourceUsageService {
             ?? running.bundleURL?.deletingPathExtension().lastPathComponent
             ?? bundleID
             ?? "PID \(running.processIdentifier)"
-        let canQuit = running.processIdentifier != me
-            && !(bundleID.map(protectedBundleIDs.contains) ?? false)
+        let canQuit = !(bundleID.map(protectedBundleIDs.contains) ?? false)
         return ResourceApp(pid: running.processIdentifier, bundleID: bundleID,
                            name: name, bundlePath: path, canQuit: canQuit)
     }
@@ -260,6 +259,11 @@ final class ResourceUsageService {
     /// save sheet, and the user may cancel. The row stays until the process
     /// has actually gone. Never forced.
     func quit(_ app: ResourceApp) {
+        if app.pid == ProcessInfo.processInfo.processIdentifier {
+            Self.logger.notice("Quitting Astraea from the resource page")
+            NSApp.terminate(nil)
+            return
+        }
         guard app.canQuit, quitting[app.pid] == nil,
               let running = NSRunningApplication(processIdentifier: app.pid),
               !running.isTerminated,

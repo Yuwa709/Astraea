@@ -31,7 +31,7 @@ nonisolated struct ResourceApp: Sendable, Equatable, Hashable {
     let name: String
     /// The app's `.app` bundle, standardized. Nil for a bundle-less app.
     let bundlePath: String?
-    /// False for Astraea itself and the system's own shell apps.
+    /// False for the system's own shell apps.
     let canQuit: Bool
 }
 
