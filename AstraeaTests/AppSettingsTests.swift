@@ -1091,6 +1091,36 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.schemaVersion, 0)
     }
 
+    // MARK: - v21: the HUD's one-time Accessibility prompt
+
+    /// Real v20 JSON loads with nothing dropped and the prompt not yet shown.
+    func testV20JSONMigratesToV21WithNothingDropped() {
+        write("""
+        {"schemaVersion": 20,
+         "moduleEnablement": {"media": true, "clipboard": true},
+         "hoverEnterDelay": 0.42,
+         "showMenuBarIcon": false,
+         "hapticsEnabled": false,
+         "reopenLastPage": true}
+        """)
+        let settings = SettingsStore(defaults: defaults).settings
+
+        XCTAssertEqual(settings.schemaVersion, AppSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.moduleEnablement["clipboard"], true)
+        XCTAssertEqual(settings.hoverEnterDelay, 0.42, accuracy: 0.0001)
+        XCTAssertFalse(settings.showMenuBarIcon)
+        XCTAssertFalse(settings.hapticsEnabled)
+        XCTAssertTrue(settings.reopenLastPage)
+        XCTAssertFalse(settings.accessibilityPromptedForHUD, "a v20 install has not been asked")
+    }
+
+    func testAccessibilityPromptedSurvivesARoundTrip() {
+        let store = SettingsStore(defaults: defaults)
+        store.update { $0.accessibilityPromptedForHUD = true }
+        XCTAssertTrue(SettingsStore(defaults: defaults).settings.accessibilityPromptedForHUD,
+                      "asked once, never again")
+    }
+
     // MARK: - A payload from a newer schema (downgrade)
 
     /// A downgraded build must not drop what a newer one wrote. The payload

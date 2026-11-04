@@ -36,7 +36,8 @@ struct AppSettings: Codable, Equatable {
     /// v18: added hapticsEnabled.
     /// v19: added mediaPlayerLayout.
     /// v20: removed capybaraThemeEnabled — no view ever read it.
-    static let currentSchemaVersion = 20
+    /// v21: added accessibilityPromptedForHUD.
+    static let currentSchemaVersion = 21
 
     var schemaVersion: Int = AppSettings.currentSchemaVersion
 
@@ -72,6 +73,12 @@ struct AppSettings: Codable, Equatable {
     /// classic one. **Simple by default**, for upgraded installs too: it is
     /// what 1.5.1 shows. See `MediaPlayerLayout`.
     var mediaPlayerLayout: MediaPlayerLayout = .default
+
+    /// Whether the volume/brightness HUD has shown the system's
+    /// Accessibility prompt. It asks once, ever, on the first volume or
+    /// brightness key pressed without trust (user, 2026-11-03); granted,
+    /// the HUD replaces the system OSD. Not a preference: no Settings row.
+    var accessibilityPromptedForHUD = false
 
     // `spotifyClientID` lived here until v4. It was a per-user field, which
     // was the wrong model: the Client ID identifies *Astraea* to Spotify, not
@@ -283,6 +290,7 @@ struct AppSettings: Codable, Equatable {
         case appVolume, faceUnlockAutoLockInterval
         case faceUnlockAtLockScreenEnabled, faceUnlockMatchThreshold, faceUnlockLiveness
         case reopenLastPage, windowLayouts, hapticsEnabled, mediaPlayerLayout
+        case accessibilityPromptedForHUD
     }
 
     /// Keys an older schema wrote that this one no longer has. Read only by
@@ -374,6 +382,9 @@ struct AppSettings: Codable, Equatable {
         // this build does not know falls back to it too.
         mediaPlayerLayout = (try? container.decode(
             MediaPlayerLayout.self, forKey: .mediaPlayerLayout)) ?? .default
+        // Absent in v20 and earlier: never asked.
+        accessibilityPromptedForHUD = (try? container.decode(
+            Bool.self, forKey: .accessibilityPromptedForHUD)) ?? false
     }
 
     /// One saved module toggle, or nil when the stored value is not a Bool.
@@ -510,6 +521,11 @@ struct AppSettings: Codable, Equatable {
             // it is not a silent wipe: no view ever read the flag and no
             // Settings control ever exposed it, so whatever it held changed
             // nothing the user could see.
+            fallthrough
+        case 20:
+            // v21 added accessibilityPromptedForHUD; the lenient decoder
+            // fills false for v20 JSON: that install has not been asked.
+            // Nothing moves.
             fallthrough
         default:
             break

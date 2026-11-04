@@ -343,6 +343,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         systemHUD.onLiveActivityRequest = { [weak self] request in
             self?.coordinator.requestLiveActivity(request)
         }
+        // Hiding the system OSD needs Accessibility. Asked once, ever, on
+        // the first volume or brightness key pressed without it: a direct
+        // response to the key, never at launch.
+        systemHUD.onNeedsAccessibility = { [weak self] in
+            guard let self, !self.settings.settings.accessibilityPromptedForHUD else { return }
+            self.settings.update { $0.accessibilityPromptedForHUD = true }
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+            Self.logger.notice("Accessibility requested for the volume/brightness HUD (once)")
+        }
         let modules: [any NotchModule] = [
             media,
             updates,

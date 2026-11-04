@@ -92,6 +92,11 @@ final class SystemHUDModule: NotchModule {
     /// Set by AppDelegate to the coordinator; the module never touches it.
     var onLiveActivityRequest: ((LiveActivityRequest) -> Void)?
 
+    /// A key was pressed while the system still owns the keys. AppDelegate
+    /// shows the Accessibility prompt the first time only (it holds the
+    /// "asked" flag in settings); granted, `HUDKeyMonitor` takes over live.
+    var onNeedsAccessibility: (() -> Void)?
+
     private let state = SystemHUDState()
     private let volume: VolumeMonitor
     private let brightness = BrightnessController()
@@ -136,6 +141,9 @@ final class SystemHUDModule: NotchModule {
             heldKeys.insert(event.key)
         } else {
             heldKeys.remove(event.key)
+        }
+        if !keys.isIntercepting, event.isDown, !event.isRepeat, !AXIsProcessTrusted() {
+            onNeedsAccessibility?()
         }
         let modifiers = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let fine = modifiers.contains(.option) && modifiers.contains(.shift)
