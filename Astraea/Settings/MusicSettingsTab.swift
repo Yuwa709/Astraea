@@ -35,6 +35,16 @@ struct MusicSettingsTab: View {
 
             PlayerAccessSection()
 
+            Section {
+                ForEach(YouTubeMusicBrowser.allCases, id: \.self) { browser in
+                    SettingsLabel(browser.displayName, detail: browser.enableJavaScriptSteps)
+                }
+            } header: {
+                Text("YouTube Music")
+            } footer: {
+                SettingsFooter("Astraea reads and controls the YouTube Music tab itself, so other browser media can't replace it. Each browser needs JavaScript from Apple Events turned on. Until then, YouTube Music shows like any other browser media.")
+            }
+
             // Hidden while no source reads the preference — see
             // `SystemMediaAdapter.isRegistered`. A control that changes
             // nothing is worse than a missing one: it invites the user to

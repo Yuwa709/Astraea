@@ -102,6 +102,10 @@ final class MediaModule: NotchModule {
 
     /// Up Next and favourite, mirrored from the active source.
     private(set) var upNext: UpNextTrack?
+    /// One line telling the user how to let Astraea control YouTube Music in
+    /// the browser the notch is showing, or nil. Set only while the system
+    /// source shows that browser and its YouTube Music tab cannot be read.
+    private(set) var browserSetupHint: String?
     private(set) var likedCurrent: Bool?
     /// Shuffle and repeat, mirrored from the active source the same way
     /// `likedCurrent` and `upNext` are. The mirror is the point: the
@@ -264,6 +268,7 @@ final class MediaModule: NotchModule {
             // Not started here: `isEnabled`'s setter starts observation, so
             // a module registered disabled never starts it at all.
         }
+        youTubeMusic?.onSetupHintChange = { [weak self] in self?.updateBrowserSetupHint() }
 
         // Display sleep stops the clock and the spectrum capture even with
         // the panel pinned open — the same observers every polling service in
@@ -289,6 +294,7 @@ final class MediaModule: NotchModule {
         displayAsleep = asleep
         Self.logger.notice("Display \(asleep ? "asleep" : "awake", privacy: .public); live sync and spectrum re-evaluated")
         updateLiveSync()
+        youTubeMusic?.setDisplayAsleep(asleep)
         updateSpectrumVisibility()
         updateMotionArtworkGate()
         // A system now-playing stream that died, and used up its restart
@@ -378,6 +384,13 @@ final class MediaModule: NotchModule {
         // Recorded before arbitrating, so `dedicatedSourceHasContent` answers
         // for the state including this update rather than the one before it.
         snapshots[source.sourceID] = snapshot?.hasContent == true ? snapshot : nil
+
+        // Browser media changed: the YouTube Music adapter looks for its tab.
+        // Signalled whether or not the system source may take the notch, so
+        // a YouTube Music track change reaches it even while it holds.
+        if source is SystemMediaAdapter, let snapshot {
+            youTubeMusic?.browserSessionChanged(bundleID: snapshot.sourceBundleID)
+        }
 
         guard shouldTakeOver(snapshot, from: source) else { return }
 
@@ -575,8 +588,30 @@ final class MediaModule: NotchModule {
         if had != (next != nil) { onContentReflow?() }
     }
 
+    /// The YouTube Music adapter, when registered.
+    private var youTubeMusic: YouTubeMusicAdapter? {
+        sources.lazy.compactMap { $0 as? YouTubeMusicAdapter }.first
+    }
+
+    /// Shows the setup hint only while the system source is showing the very
+    /// browser whose YouTube Music tab is unreadable: never over Spotify,
+    /// Music, or YouTube Music itself. It sits in Up Next's slot (which the
+    /// system source never fills), so it reflows on presence the same way.
+    private func updateBrowserSetupHint() {
+        var hint: String?
+        if activeSource is SystemMediaAdapter, let playing = nowPlaying, playing.hasContent {
+            hint = youTubeMusic?.setupHint(forBrowser: playing.sourceBundleID)
+        }
+        guard hint != browserSetupHint else { return }
+        let had = browserSetupHint != nil
+        browserSetupHint = hint
+        Self.logger.notice("Browser setup hint \(hint == nil ? "hidden" : "shown", privacy: .public)")
+        if had != (hint != nil), upNext == nil { onContentReflow?() }
+    }
+
     private func handleUpdate(_ snapshot: NowPlaying?) {
         nowPlaying = snapshot
+        updateBrowserSetupHint()
         // The visualiser's tap is whole-system, so it is gated on the player
         // the notch is actually showing: paused, stopped or empty means the
         // tap comes down rather than reacting to unrelated system audio.
@@ -720,6 +755,7 @@ final class MediaModule: NotchModule {
         isVisible = true
         liveSyncWanted = true
         updateLiveSync()
+        youTubeMusic?.setPanelVisible(true)
         updateSpectrumVisibility()
         updateMotionArtworkGate()
         volumeReadTask?.cancel()
@@ -943,6 +979,7 @@ final class MediaModule: NotchModule {
         isVisible = false
         liveSyncWanted = false
         updateLiveSync()
+        youTubeMusic?.setPanelVisible(false)
         updateSpectrumVisibility()
         updateMotionArtworkGate()
         volumeReadTask?.cancel()

@@ -455,7 +455,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Astraea/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Astraea controls playback in Music and Spotify.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Astraea controls playback in Music, Spotify, and YouTube Music in Chrome and Safari.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Astraea shows your upcoming events in the notch.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Astraea uses your location to show local weather.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
@@ -494,7 +494,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Astraea/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Astraea controls playback in Music and Spotify.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Astraea controls playback in Music, Spotify, and YouTube Music in Chrome and Safari.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Astraea shows your upcoming events in the notch.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Astraea uses your location to show local weather.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";

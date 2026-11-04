@@ -306,6 +306,8 @@ private struct MediaPlayerScreen: View {
             // ever answers; see `UpNextTrack`.
             if let next = module.upNext {
                 MediaUpNextRow(next: next, accent: module.artworkAccent)
+            } else if let hint = module.browserSetupHint {
+                MediaSetupHintRow(text: hint)
             }
         }
         .frame(width: PlayerLayout.width)
@@ -881,6 +883,23 @@ private struct MediaUpNextRow: View {
         .accessibilityLabel(next.artist.isEmpty
                             ? "Up next: \(next.title)"
                             : "Up next: \(next.title) by \(next.artist)")
+    }
+}
+
+/// How to let Astraea control YouTube Music in the browser on screen.
+/// Information only, in Up Next's slot, which the system source never fills;
+/// see `MediaModule.updateBrowserSetupHint`. Shared by both player layouts.
+struct MediaSetupHintRow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NotchStyle.Font.caption)
+            .foregroundStyle(NotchStyle.Ink.secondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

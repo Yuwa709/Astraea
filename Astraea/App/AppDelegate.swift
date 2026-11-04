@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Split out so the flag is consulted in exactly one place rather than
     /// being encoded as a literal array that someone has to remember to edit.
     private func mediaSources(includingSystem system: SystemMediaAdapter) -> [any MediaSource] {
-        var sources: [any MediaSource] = [SpotifyAdapter(), MusicAdapter()]
+        var sources: [any MediaSource] = [SpotifyAdapter(), MusicAdapter(), YouTubeMusicAdapter()]
         if SystemMediaAdapter.isRegistered { sources.append(system) }
         return sources
     }

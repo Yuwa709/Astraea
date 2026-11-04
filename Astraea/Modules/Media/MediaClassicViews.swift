@@ -136,6 +136,8 @@ struct MediaClassicPlayerScreen: View {
             // ever answers; see `UpNextTrack`.
             if let next = module.upNext {
                 ClassicUpNextRow(next: next, accent: module.artworkAccent)
+            } else if let hint = module.browserSetupHint {
+                MediaSetupHintRow(text: hint)
             }
             ClassicLyricsView(module: module, namespace: namespace)
             ClassicControlsRow(module: module, isPlaying: playing.isPlaying)
