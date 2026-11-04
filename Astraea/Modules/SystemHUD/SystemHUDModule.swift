@@ -176,7 +176,7 @@ final class SystemHUDModule: NotchModule {
     private func applyVolume(_ event: HUDKeyEvent, fine: Bool) -> Bool {
         guard canApply(event.key), let reading = volume.reading else { return false }
         // The release was the system's too only if the press was; ours.
-        guard event.isDown else { return true }
+        guard event.isDown else { startRelease(); return true }
         var next = reading
         switch event.key {
         case .mute:
@@ -203,13 +203,21 @@ final class SystemHUDModule: NotchModule {
 
     private func applyBrightness(_ event: HUDKeyEvent, fine: Bool) -> Bool {
         guard let level = brightness.level else { return false }
-        guard event.isDown else { return true }
+        guard event.isDown else { startRelease(); return true }
         let base = HUDStep.base(reading: level, lastSet: lastBrightness)
         let next = HUDStep.next(base, up: event.key == .brightnessUp, fine: fine)
         guard brightness.setLevel(next) else { return false }
         lastBrightness = next
         present(.brightness, level: next, muted: false)
         return true
+    }
+
+    /// The last key let go: restart the expiry at `duration`. The press
+    /// held it at `heldDuration`, so without this the strip stayed 3 s
+    /// (user, 2026-11-03). Refreshes in place; nothing re-enters.
+    private func startRelease() {
+        guard heldKeys.isEmpty else { return }
+        present(state.kind, level: state.level, muted: state.isMuted)
     }
 
     // MARK: - Presenting
