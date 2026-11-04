@@ -76,6 +76,7 @@ final class NotchPanel: NSPanel {
         _ content: AnyView?,
         leadingWing: AnyView? = nil,
         trailingWing: AnyView? = nil,
+        hud: AnyView? = nil,
         neckHeight: CGFloat,
         housingLocalRange: ClosedRange<CGFloat> = 0...0,
         panelWidth: CGFloat = 0,
@@ -85,10 +86,17 @@ final class NotchPanel: NSPanel {
         topLeadingAccessory: AnyView? = nil,
         topTrailingAccessory: AnyView? = nil
     ) {
+        // The strip outlives the `.hud` state by the length of its retract:
+        // a collapsed render passes no strip, and the cached one is kept
+        // until the drop has closed.
+        if hud != nil || hudReserve == 0 { hudView = hud }
         hostingView?.rootView = NotchOverlayView(
             content: content,
             leadingWing: leadingWing,
             trailingWing: trailingWing,
+            hud: hudView,
+            hudReserve: hudReserve,
+            hudExtended: hudExtended,
             neckHeight: neckHeight,
             revealContent: reveal,
             topLeadingAccessory: topLeadingAccessory,
@@ -98,6 +106,112 @@ final class NotchPanel: NSPanel {
             chromeGroups: chromeGroups,
             chromeOnly: chromeOnly
         )
+    }
+
+    // MARK: - HUD drop
+
+    /// The HUD's strip, kept through its retract. See `setContent`.
+    private var hudView: AnyView?
+    /// Height the window holds below the silhouette for the strip: the
+    /// strip height from the moment the HUD drops until it has closed,
+    /// otherwise 0.
+    private var hudReserve: CGFloat = 0
+    /// Whether the strip is (heading) down. The overlay animates the
+    /// silhouette's bottom edge and the strip together toward it.
+    private var hudExtended = false
+
+    /// The HUD's drop and retract are drawn by SwiftUI inside a window that
+    /// is already at the dropped size: the silhouette's bottom edge and the
+    /// strip ride one animated value, so they cannot come apart. Driving it
+    /// with the window frame left the icon and bar standing still while the
+    /// edge swept past them — on screen for two frames over the wallpaper,
+    /// recorded 2026-11-03 — because the hosting view does not re-lay out
+    /// on every step of a frame animation.
+    ///
+    /// Covers dropping, staying down, and a retract back to the wings or
+    /// the bare notch. Opening the panel over a HUD is not a retract: the
+    /// strip goes and the frame animates as usual.
+    nonisolated static func hudDropHandles(state: State, reserved: Bool) -> Bool {
+        switch state {
+        case .hud: return true
+        case .compact, .idle: return reserved
+        case .peek, .expanded: return false
+        }
+    }
+
+    private func applyHUDDrop(state: State, target: NSRect, label: String) {
+        // Supersedes any frame animation and any pending end of a retract.
+        animationGeneration &+= 1
+        let generation = animationGeneration
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        if state == .hud {
+            // Step the window to the dropped size with the silhouette still
+            // drawn at its old height, then let the overlay ease it down. A
+            // drop mid-retract changes nothing here but the direction.
+            hudReserve = Self.hudStripHeight
+            hudExtended = true
+            refreshHUDLayer()
+            if target != frame { setFrame(target, display: true) }
+            Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public)")
+            return
+        }
+
+        // Retract: the overlay eases the edge and strip back up inside the
+        // dropped window; once closed, the window gives the strip back.
+        hudExtended = false
+        refreshHUDLayer()
+        Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public) (after HUD retract)")
+        let finish = { [weak self] in
+            guard let self, self.animationGeneration == generation else { return }
+            self.releaseHUDReserve()
+            // The strip's height comes off the bottom: invisible, the
+            // silhouette is already there.
+            var rest = self.frame
+            rest.origin.y += Self.hudStripHeight
+            rest.size.height -= Self.hudStripHeight
+            self.setFrame(rest, display: true)
+            // Anything left (the wings went while the HUD was down) is an
+            // ordinary resize.
+            if rest != target {
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = reduceMotion ? 0 : Self.collapseDuration
+                    let c = Self.collapseCurve
+                    context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
+                    self.animator().setFrame(target, display: true)
+                }, completionHandler: { [weak self] in
+                    MainActor.assumeIsolated { self?.settleCompleted(generation) }
+                })
+            } else {
+                self.reevaluateHoverAfterFrameChange()
+            }
+        }
+        if reduceMotion {
+            finish()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.collapseDuration + 0.02) {
+                MainActor.assumeIsolated { finish() }
+            }
+        }
+    }
+
+    /// Drops the strip and its reserved height from the overlay, at once.
+    private func releaseHUDReserve() {
+        guard hudReserve > 0 || hudView != nil else { return }
+        hudReserve = 0
+        hudExtended = false
+        hudView = nil
+        refreshHUDLayer()
+    }
+
+    /// Re-renders the overlay with the current HUD fields, leaving the rest
+    /// of its content as the coordinator last set it.
+    private func refreshHUDLayer() {
+        guard var view = hostingView?.rootView else { return }
+        view.hud = hudView
+        view.hudReserve = hudReserve
+        view.hudExtended = hudExtended
+        hostingView?.rootView = view
     }
 
     /// Seconds the cursor must dwell before the panel peeks; it opens fully
@@ -237,6 +351,29 @@ final class NotchPanel: NSPanel {
         case peek
         /// The open panel.
         case expanded
+        /// The compact silhouette grown a strip downward, holding a
+        /// glanceable reading (volume, brightness) under the housing. No
+        /// chrome, no haptic, never visible to hover-sampling modules.
+        case hud
+    }
+
+    /// The strip the HUD adds below the housing. Small on purpose: an icon
+    /// and a bar, read at a glance, not a panel.
+    nonisolated static let hudStripHeight: CGFloat = 30
+
+    static func hudRect(on screen: NSScreen, overWings: Bool = true) -> NSRect {
+        hudRect(housing: notchRect(on: screen), overWings: overWings)
+    }
+
+    /// The pure core of `hudRect(on:)`: whatever is showing now (the wings'
+    /// compact frame, or the bare housing), plus the strip below. Only the
+    /// height changes, so the HUD is a pure drop.
+    nonisolated static func hudRect(housing: NSRect, overWings: Bool = true) -> NSRect {
+        let resting = overWings ? compactRect(housing: housing) : housing
+        return NSRect(x: resting.minX,
+                      y: resting.minY - hudStripHeight,
+                      width: resting.width,
+                      height: resting.height + hudStripHeight)
     }
 
     /// Wing widths, tuned by eye on hardware across four rounds. Asymmetric
@@ -434,11 +571,13 @@ final class NotchPanel: NSPanel {
                   expandedContentSize: CGSize = .zero,
                   chromeOnly: Bool = false,
                   chromeGroups: ChromeGroupWidths = ChromeGroupWidths(),
-                  peekOverWings: Bool = false) {
+                  peekOverWings: Bool = false,
+                  hudOverWings: Bool = true) {
         let visible: NSRect
         switch state {
         case .idle: visible = Self.notchRect(on: screen)
         case .compact: visible = Self.compactRect(on: screen)
+        case .hud: visible = Self.hudRect(on: screen, overWings: hudOverWings)
         case .peek:
             visible = Self.peekRect(resting: peekOverWings ? Self.compactRect(on: screen)
                                                            : Self.notchRect(on: screen))
@@ -458,7 +597,10 @@ final class NotchPanel: NSPanel {
         // root, which visibly shoves everything up under the screen edge
         // while logging nothing — that silence is what let the chrome-only
         // bar ship clipped. `.error`, so it persists in release builds.
-        if let fitting = hostingView?.fittingSize.height,
+        // A HUD retract is exempt: the window holds the strip's height on
+        // purpose until the strip has closed, then shrinks to `target`.
+        if !Self.hudDropHandles(state: state, reserved: hudReserve > 0),
+           let fitting = hostingView?.fittingSize.height,
            fitting > target.height + 0.5 {
             Self.logger.error("Overlay overflows the panel: fitting height \(fitting, privacy: .public) > frame height \(target.height, privacy: .public) in state \(label, privacy: .public)")
         }
@@ -471,6 +613,12 @@ final class NotchPanel: NSPanel {
         if state == .expanded && !wasExpanded {
             Haptics.perform(.alignment, performanceTime: .default)
         }
+
+        if Self.hudDropHandles(state: state, reserved: hudReserve > 0) {
+            applyHUDDrop(state: state, target: target, label: label)
+            return
+        }
+        releaseHUDReserve()
 
         guard target != frame else { return }
 
@@ -490,6 +638,8 @@ final class NotchPanel: NSPanel {
         // The bounce is the *opening*: only on the way into expanded, like
         // the haptic. An expanded-to-expanded resize (content re-measured,
         // a navigation) takes the tidy curve below instead.
+        // The HUD takes no bounce: for a 30pt strip it read as a wobble
+        // (user, 2026-11-03). It morphs down and back up on the tidy curve.
         if state == .expanded && !wasExpanded {
             // Two-stage bounce: overshoot past the target in BOTH axes, then
             // settle back. Explicit stages because window-frame animation

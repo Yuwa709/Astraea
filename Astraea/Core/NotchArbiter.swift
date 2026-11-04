@@ -174,6 +174,30 @@ final class NotchArbiter {
         notifyExpiryChange(since: generation)
     }
 
+    /// Ends a module's activity early, active or queued. The coordinator
+    /// uses it to yield a HUD the moment the panel opens over it.
+    func endLiveActivity(of moduleID: ModuleID) {
+        let generation = expiryGeneration
+        queue.removeAll { $0.moduleID == moduleID }
+        if let current = active, current.request.moduleID == moduleID {
+            Self.logger.notice("\(moduleID, privacy: .public) ended early")
+            endActive()
+            activateNextQueued()
+        }
+        recompute()
+        notifyExpiryChange(since: generation)
+    }
+
+    /// What standby shows, whether or not an activity is covering it. A HUD
+    /// draws under the standby wings, so the coordinator needs this while
+    /// the presentation says `.liveActivity`.
+    var standbyIDs: [ModuleID] {
+        modules.filter { $0.isEnabled && $0.wantsCompactDisplay }.map(\.id)
+    }
+
+    /// The module holding the notch right now, or nil in standby.
+    var activeModuleID: ModuleID? { active?.request.moduleID }
+
     /// Seconds until the active activity yields, or nil when nothing is
     /// active. Lets the coordinator schedule a single one-shot timer at the
     /// exact moment instead of polling — hard rule 9 by construction.
@@ -230,7 +254,7 @@ final class NotchArbiter {
         if let active {
             next = .liveActivity(active.request.moduleID)
         } else {
-            next = .standby(modules.filter { $0.isEnabled && $0.wantsCompactDisplay }.map(\.id))
+            next = .standby(standbyIDs)
         }
 
         guard next != presentation else { return }

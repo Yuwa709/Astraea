@@ -338,10 +338,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stats.onPresenceChange = { [weak self] in
             self?.coordinator.refreshPresentation()
         }
+        // Volume feedback in the notch. Always on, absent from Settings.
+        let systemHUD = SystemHUDModule()
+        systemHUD.onLiveActivityRequest = { [weak self] request in
+            self?.coordinator.requestLiveActivity(request)
+        }
         let modules: [any NotchModule] = [
             media,
             updates,
-            stats
+            stats,
+            systemHUD
         ]
         // register() applies the stored preference itself, so a module can
         // never start in a state that disagrees with the user's choice.

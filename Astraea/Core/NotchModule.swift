@@ -35,6 +35,17 @@ struct LiveActivityRequest: Equatable, Sendable {
     let duration: TimeInterval
 }
 
+/// How a module's live activity occupies the notch.
+enum LiveActivityStyle: Sendable {
+    /// Opens the full panel on the module's expanded view.
+    case expanded
+    /// Grows the collapsed notch a little downward and draws the module's
+    /// expanded view in that strip, with no chrome. For glanceable
+    /// feedback (volume, brightness). An open panel never shows one:
+    /// hovering yields it, and requests made while open are dropped.
+    case hud
+}
+
 /// One feature that can display in the notch.
 ///
 /// Modules never reference each other and never touch `NotchPanel`. The
@@ -77,6 +88,13 @@ protocol NotchModule: AnyObject {
     /// open stack is not told it is visible there.
     var hasExpandedContent: Bool { get }
 
+    /// How this module's live activities present. Default `.expanded`.
+    var liveActivityStyle: LiveActivityStyle { get }
+
+    /// Whether Settings lists this module with an on/off switch. Default
+    /// true. Built-in feedback that should simply always work answers false.
+    var showsInSettings: Bool { get }
+
     /// Called when the notch collapses out of the expanded state, so a
     /// module can leave any takeover view it was showing. Default no-op.
     func notchDidCollapse()
@@ -113,6 +131,8 @@ protocol NotchModule: AnyObject {
 extension NotchModule {
     var wantsCompactDisplay: Bool { true }
     var hasExpandedContent: Bool { true }
+    var liveActivityStyle: LiveActivityStyle { .expanded }
+    var showsInSettings: Bool { true }
     func notchDidCollapse() {}
     func didBecomeVisible() {}
     func didResignVisible() {}

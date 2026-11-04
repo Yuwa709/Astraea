@@ -243,7 +243,8 @@ final class NotchCoordinator {
 
     /// What Settings lists: one row per registered module.
     var moduleSummaries: [(id: ModuleID, displayName: String, isEnabled: Bool)] {
-        arbiter.registeredModules.map { ($0.id, $0.displayName, $0.isEnabled) }
+        arbiter.registeredModules.filter(\.showsInSettings)
+            .map { ($0.id, $0.displayName, $0.isEnabled) }
     }
 
     /// Whether a module is on, as Settings shows it. Read from the store, so
@@ -267,6 +268,13 @@ final class NotchCoordinator {
     }
 
     func requestLiveActivity(_ request: LiveActivityRequest) {
+        // A HUD never draws inside the open panel: the user is looking at
+        // the panel, and swapping it for a strip would yank it away.
+        if arbiter.module(for: request.moduleID)?.liveActivityStyle == .hud,
+           isPinned || isHovered || isWindowDragOver {
+            Self.logger.debug("\(request.moduleID, privacy: .public) HUD dropped: panel is open")
+            return
+        }
         arbiter.requestLiveActivity(request)
     }
 
@@ -386,15 +394,21 @@ final class NotchCoordinator {
                                              isHovered: isHovered || isWindowDragOver,
                                              hasLiveActivity: isShowingLiveActivity),
                    isPeeking: isPeeking,
-                   hasWings: standbyWings() != nil)
+                   hasWings: standbyWings() != nil,
+                   hasHUD: activeHUDModule != nil)
     }
 
     /// The pure core of `desiredState`: open beats peek beats the resting
     /// silhouette. A peek over the wings and one over the bare notch are the
     /// same state; `applyState` tells the panel which it grows from.
+    ///
+    /// A HUD outranks the peek: it is the answer to a key the user just
+    /// pressed. It never outranks expanded — the coordinator yields it the
+    /// moment anything opens the panel.
     nonisolated static func state(expand: Bool, isPeeking: Bool,
-                                  hasWings: Bool) -> NotchPanel.State {
+                                  hasWings: Bool, hasHUD: Bool = false) -> NotchPanel.State {
         if expand { return .expanded }
+        if hasHUD { return .hud }
         if isPeeking { return .peek }
         return hasWings ? .compact : .idle
     }
@@ -557,6 +571,7 @@ final class NotchCoordinator {
     }
 
     private func applyState() {
+        if yieldHUDIfPanelOpening() { return }
         guard let panel, let screen = currentScreen else { return }
         let state = desiredState()
         resetOnCollapse(to: state)
@@ -564,7 +579,8 @@ final class NotchCoordinator {
                        expandedContentSize: expandedContentSize,
                        chromeOnly: isChromeOnly,
                        chromeGroups: chromeGroups,
-                       peekOverWings: state == .peek && standbyWings() != nil)
+                       peekOverWings: state == .peek && standbyWings() != nil,
+                       hudOverWings: standbyWings() != nil)
         lastAppliedState = state
         // Visibility follows what the panel now shows, not what the arbiter
         // presented: behind the collapsed wings or a navigated screen, the
@@ -677,14 +693,46 @@ final class NotchCoordinator {
         return ids.compactMap { arbiter.module(for: $0) }.filter { $0.isEnabled }
     }
 
+    /// A live activity that opens the panel. A HUD-style one does not.
     private var isShowingLiveActivity: Bool {
-        if case .liveActivity = arbiter.presentation { return true }
-        return false
+        guard case .liveActivity(let id) = arbiter.presentation else { return false }
+        return arbiter.module(for: id)?.liveActivityStyle != .hud
+    }
+
+    /// The module whose HUD holds the notch, if one does.
+    private var activeHUDModule: (any NotchModule)? {
+        guard case .liveActivity(let id) = arbiter.presentation,
+              let module = arbiter.module(for: id),
+              module.liveActivityStyle == .hud else { return nil }
+        return module
+    }
+
+    /// Something is opening the panel over a HUD: end the HUD so the panel
+    /// opens on the standby stack, not on a lone bar. Returns true when it
+    /// ended one — the arbiter's presentation callback has then already
+    /// re-rendered and re-applied, so the caller must stop.
+    private func yieldHUDIfPanelOpening() -> Bool {
+        guard let hud = activeHUDModule,
+              Self.shouldExpand(isPinned: isPinned,
+                                isHovered: isHovered || isWindowDragOver,
+                                hasLiveActivity: false) else { return false }
+        Self.logger.notice("Panel opening over \(hud.id, privacy: .public) HUD; yielding it")
+        arbiter.endLiveActivity(of: hud.id)
+        return true
     }
 
     /// The first standby module offering wing content provides both wings.
+    /// A HUD keeps them: it grows down from the wings, it does not replace
+    /// them.
     private func standbyWings() -> (leading: AnyView?, trailing: AnyView?)? {
-        guard case .standby(let ids) = arbiter.presentation else { return nil }
+        let ids: [ModuleID]
+        if case .standby(let standby) = arbiter.presentation {
+            ids = standby
+        } else if activeHUDModule != nil {
+            ids = arbiter.standbyIDs
+        } else {
+            return nil
+        }
         for id in ids {
             guard let module = arbiter.module(for: id) else { continue }
             let leading = module.makeCompactLeadingView()
@@ -697,6 +745,7 @@ final class NotchCoordinator {
     }
 
     private func renderContent() {
+        if yieldHUDIfPanelOpening() { return }
         guard let panel, let screen = currentScreen else { return }
         let housing = NotchPanel.notchRect(on: screen)
         let neck = housing.height
@@ -759,6 +808,11 @@ final class NotchCoordinator {
             let wings = standbyWings()
             panel.setContent(nil, leadingWing: wings?.leading, trailingWing: wings?.trailing,
                              neckHeight: neck)
+        case .hud:
+            isChromeOnly = false
+            let wings = standbyWings()
+            panel.setContent(nil, leadingWing: wings?.leading, trailingWing: wings?.trailing,
+                             hud: activeHUDModule?.makeExpandedView(), neckHeight: neck)
         case .idle:
             isChromeOnly = false
             panel.setContent(nil, neckHeight: neck)

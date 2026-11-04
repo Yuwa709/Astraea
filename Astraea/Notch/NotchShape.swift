@@ -88,6 +88,13 @@ struct NotchOverlayView: View {
     /// housing. The gap between them is exactly the housing's deadzone.
     var leadingWing: AnyView?
     var trailingWing: AnyView?
+    /// The HUD strip's contents, drawn below the neck in the `.hud` state.
+    var hud: AnyView?
+    /// Height the window holds below the silhouette for the HUD strip, and
+    /// whether the strip is down. `NotchPanel` owns both; see its
+    /// `hudDropHandles`.
+    var hudReserve: CGFloat = 0
+    var hudExtended = false
     /// The menu bar band, which the housing occupies. Content starts below it.
     var neckHeight: CGFloat = 32
     /// Play the emerge-from-the-notch entrance on this content.
@@ -135,7 +142,8 @@ struct NotchOverlayView: View {
         // blob rather than a bar.
         let expanded = content != nil
         ZStack(alignment: .top) {
-            AnimatedSilhouette(soft: expanded && !chromeOnly)
+            HUDDrop(soft: expanded && !chromeOnly, hud: hud, reserve: hudReserve,
+                    extended: hudExtended, neckHeight: neckHeight)
             if leadingWing != nil || trailingWing != nil {
                 wingsRow
             }
@@ -357,6 +365,55 @@ private struct AnimatedSilhouette: View {
                     drawnSoft = false
                     shadowShown = false
                 }
+            }
+        }
+    }
+}
+
+/// The silhouette and the HUD strip, dropped together.
+///
+/// The window is already at the dropped size whenever `reserve` is nonzero;
+/// this draws the silhouette `reserve - drop` short of its bottom and hangs
+/// the strip from that edge. One animated value moves both, so the icon and
+/// bar ride the edge down and back up and can never be uncovered by it.
+/// The strip is clipped to the region below the neck: as the edge rises it
+/// slides up into the notch rather than fading. Same curve and duration
+/// both ways, the close's, with no bounce (user, 2026-11-03).
+private struct HUDDrop: View {
+    let soft: Bool
+    let hud: AnyView?
+    let reserve: CGFloat
+    let extended: Bool
+    let neckHeight: CGFloat
+
+    /// How far the strip is down, 0...reserve. Nil until first layout.
+    @State private var drop: CGFloat?
+
+    var body: some View {
+        let shown = min(drop ?? (extended ? reserve : 0), reserve)
+        let strip = NotchPanel.hudStripHeight
+        ZStack(alignment: .top) {
+            AnimatedSilhouette(soft: soft)
+                .padding(.bottom, reserve - shown)
+            if let hud, reserve > 0 {
+                hud
+                    .padding(.horizontal, NotchPanel.compactEdgeExtra + 14)
+                    .frame(height: strip)
+                    .offset(y: shown - strip)
+                    .frame(height: strip, alignment: .top)
+                    .clipped()
+                    .padding(.top, neckHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .onAppear { drop = extended ? reserve : 0 }
+        .onChange(of: extended) { _, isDown in
+            let target = isDown ? strip : 0
+            // Hard rule 8: Reduce Motion snaps.
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                drop = target
+            } else {
+                withAnimation(NotchOverlayView.collapseAnimation) { drop = target }
             }
         }
     }
