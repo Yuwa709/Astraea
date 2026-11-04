@@ -63,12 +63,6 @@ final class NotchPanel: NSPanel {
     /// expanded.
     private var currentState: State = .idle
 
-    /// Bumped by every frame change `setState` starts, so an animation
-    /// completion can tell whether it is still the latest. Replaces a
-    /// `currentState == .expanded` check, which let an older bounce's settle
-    /// apply its stale target over a newer expanded resize.
-    private var animationGeneration = 0
-
     /// Replaces the notch's contents. All nil shows the bare silhouette.
     /// `reveal` plays the emerge-from-the-notch entrance — pass true only on
     /// the transition into expanded, not on content updates mid-display.
@@ -86,17 +80,35 @@ final class NotchPanel: NSPanel {
         topLeadingAccessory: AnyView? = nil,
         topTrailingAccessory: AnyView? = nil
     ) {
-        // The strip outlives the `.hud` state by the length of its retract:
-        // a collapsed render passes no strip, and the cached one is kept
-        // until the drop has closed.
-        if hud != nil || hudReserve == 0 { hudView = hud }
+        // Leaving the open panel or the HUD, what was showing stays until
+        // the edge has closed over it (`settleMorph` lets it go): a
+        // collapse renders no page and a retract no strip, and dropping
+        // them here would empty the notch before it had shrunk.
+        if hud != nil || !(currentState == .hud || hudDeparting) { hudView = hud }
+        hudDeparting = hud == nil && hudView != nil
+        if let old = hostingView?.rootView,
+           content == nil, old.content != nil,
+           currentState == .expanded || pageDeparting {
+            pageDeparting = true
+            var view = old
+            view.leadingWing = leadingWing
+            view.trailingWing = trailingWing
+            view.hud = hudView
+            // The band is the wings' again: the page's chrome under them
+            // read as two rows of icons on top of each other.
+            view.topLeadingAccessory = nil
+            view.topTrailingAccessory = nil
+            view.revealContent = false
+            view.geometry = geometry
+            hostingView?.rootView = view
+            return
+        }
+        pageDeparting = false
         hostingView?.rootView = NotchOverlayView(
             content: content,
             leadingWing: leadingWing,
             trailingWing: trailingWing,
             hud: hudView,
-            hudReserve: hudReserve,
-            hudExtended: hudExtended,
             neckHeight: neckHeight,
             revealContent: reveal,
             topLeadingAccessory: topLeadingAccessory,
@@ -104,114 +116,104 @@ final class NotchPanel: NSPanel {
             housingLocalRange: housingLocalRange,
             panelWidth: panelWidth,
             chromeGroups: chromeGroups,
-            chromeOnly: chromeOnly
+            chromeOnly: chromeOnly,
+            geometry: geometry
         )
     }
 
-    // MARK: - HUD drop
+    // MARK: - Morph
 
-    /// The HUD's strip, kept through its retract. See `setContent`.
+    /// What the overlay was last told: where everything sits and what the
+    /// silhouette is morphing to.
+    private var geometry = NotchMorphGeometry()
+    /// The visible silhouette last asked for, in screen coordinates.
+    private var visibleTarget: NSRect = .zero
+    /// The page shown while the panel closes over it.
+    private var pageDeparting = false
+    /// The HUD strip, kept while it retracts.
     private var hudView: AnyView?
-    /// Height the window holds below the silhouette for the strip: the
-    /// strip height from the moment the HUD drops until it has closed,
-    /// otherwise 0.
-    private var hudReserve: CGFloat = 0
-    /// Whether the strip is (heading) down. The overlay animates the
-    /// silhouette's bottom edge and the strip together toward it.
-    private var hudExtended = false
+    private var hudDeparting = false
 
-    /// The HUD's drop and retract are drawn by SwiftUI inside a window that
-    /// is already at the dropped size: the silhouette's bottom edge and the
-    /// strip ride one animated value, so they cannot come apart. Driving it
-    /// with the window frame left the icon and bar standing still while the
-    /// edge swept past them — on screen for two frames over the wallpaper,
-    /// recorded 2026-11-03 — because the hosting view does not re-lay out
-    /// on every step of a frame animation.
-    ///
-    /// Covers dropping, staying down, and a retract back to the wings or
-    /// the bare notch. Opening the panel over a HUD is not a retract: the
-    /// strip goes and the frame animates as usual.
-    nonisolated static func hudDropHandles(state: State, reserved: Bool) -> Bool {
-        switch state {
-        case .hud: return true
-        case .compact, .idle: return reserved
-        case .peek, .expanded: return false
-        }
+    /// The window a morph runs in: the window as it is, grown to reach the
+    /// new frame (overshoot included). Grown, never shrunk mid-morph — the
+    /// silhouette may still be anywhere inside the old frame — and trimmed
+    /// to the target once the morph has landed. Nil when the two do not
+    /// share the screen's top edge or overlap at all (the panel moved
+    /// screens): nothing on screen to morph from, so the panel snaps.
+    nonisolated static func morphCanvas(current: NSRect, reach: NSRect) -> NSRect? {
+        guard current.width > 0, current.height > 0,
+              abs(current.maxY - reach.maxY) < 0.5,
+              current.intersects(reach) else { return nil }
+        return current.union(reach)
     }
 
-    private func applyHUDDrop(state: State, target: NSRect, label: String) {
-        // Supersedes any frame animation and any pending end of a retract.
-        animationGeneration &+= 1
-        let generation = animationGeneration
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-
-        if state == .hud {
-            // Step the window to the dropped size with the silhouette still
-            // drawn at its old height, then let the overlay ease it down. A
-            // drop mid-retract changes nothing here but the direction.
-            hudReserve = Self.hudStripHeight
-            hudExtended = true
-            refreshHUDLayer()
-            if target != frame { setFrame(target, display: true) }
-            Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public)")
-            return
-        }
-
-        // Retract: the overlay eases the edge and strip back up inside the
-        // dropped window; once closed, the window gives the strip back.
-        hudExtended = false
-        refreshHUDLayer()
-        Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public) (after HUD retract)")
-        let finish = { [weak self] in
-            guard let self, self.animationGeneration == generation else { return }
-            self.releaseHUDReserve()
-            // The strip's height comes off the bottom: invisible, the
-            // silhouette is already there.
-            var rest = self.frame
-            rest.origin.y += Self.hudStripHeight
-            rest.size.height -= Self.hudStripHeight
-            self.setFrame(rest, display: true)
-            // Anything left (the wings went while the HUD was down) is an
-            // ordinary resize.
-            if rest != target {
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = reduceMotion ? 0 : Self.collapseDuration
-                    let c = Self.collapseCurve
-                    context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
-                    self.animator().setFrame(target, display: true)
-                }, completionHandler: { [weak self] in
-                    MainActor.assumeIsolated { self?.settleCompleted(generation) }
-                })
-            } else {
-                self.reevaluateHoverAfterFrameChange()
-            }
-        }
-        if reduceMotion {
-            finish()
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.collapseDuration + 0.02) {
-                MainActor.assumeIsolated { finish() }
-            }
-        }
+    /// The curve a change takes. Opening blooms; into or out of a peek is
+    /// the peek's own quick nudge; everything else — closing, a page
+    /// switch, wings, the HUD dropping and retracting — the tidy close.
+    /// The HUD takes no bounce: for a 30pt strip it read as a wobble
+    /// (user, 2026-11-03). Hard rule 8: Reduce Motion snaps.
+    nonisolated static func morphMotion(from previous: State, to state: State,
+                                        reduceMotion: Bool) -> NotchMorphMotion {
+        if reduceMotion { return .snap }
+        if state == .expanded && previous != .expanded { return .open }
+        if state == .peek || previous == .peek { return .peek }
+        return .collapse
     }
 
-    /// Drops the strip and its reserved height from the overlay, at once.
-    private func releaseHUDReserve() {
-        guard hudReserve > 0 || hudView != nil else { return }
-        hudReserve = 0
-        hudExtended = false
-        hudView = nil
-        refreshHUDLayer()
+    /// A screen rect in the overlay's housing-relative terms.
+    private static func local(_ rect: NSRect, anchor: CGFloat) -> CGRect {
+        CGRect(x: rect.minX - anchor, y: 0, width: rect.width, height: rect.height)
     }
 
-    /// Re-renders the overlay with the current HUD fields, leaving the rest
-    /// of its content as the coordinator last set it.
-    private func refreshHUDLayer() {
+    /// The window rect for a visible rect: grown by the hover halo, sides
+    /// and downward; the top stays flush with the screen edge.
+    private static func inflated(_ visible: NSRect) -> NSRect {
+        var r = visible
+        r.origin.x -= hoverMargin
+        r.size.width += hoverMargin * 2
+        r.origin.y -= hoverMargin
+        r.size.height += hoverMargin
+        return r
+    }
+
+    /// Pushes the current geometry (and departing layers) to the overlay,
+    /// leaving the rest of its content as the coordinator last set it.
+    private func refreshOverlay() {
         guard var view = hostingView?.rootView else { return }
+        view.geometry = geometry
         view.hud = hudView
-        view.hudReserve = hudReserve
-        view.hudExtended = hudExtended
+        if !pageDeparting && currentState != .expanded {
+            view.content = nil
+            view.topLeadingAccessory = nil
+            view.topTrailingAccessory = nil
+        }
         hostingView?.rootView = view
+    }
+
+    /// Sets the frame at once and cancels any frame animation in flight. A
+    /// plain `setFrame` does not cancel an `animator()` one.
+    private func snapFrame(_ rect: NSRect) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            animator().setFrame(rect, display: true)
+        }
+    }
+
+    /// The morph has landed: departing layers go, and the window gives back
+    /// what it held for the morph. Invisible: the silhouette is already at
+    /// the target and the geometry is housing-relative, so trimming the
+    /// window moves nothing.
+    private func settleMorph(_ generation: Int, target: NSRect, anchor: CGFloat) {
+        guard generation == geometry.generation else { return }
+        if currentState != .hud {
+            hudView = nil
+            hudDeparting = false
+        }
+        pageDeparting = false
+        geometry.anchorX = anchor - target.minX
+        refreshOverlay()
+        if frame != target { snapFrame(target) }
+        reevaluateHoverAfterFrameChange()
     }
 
     /// Seconds the cursor must dwell before the panel peeks; it opens fully
@@ -585,115 +587,73 @@ final class NotchPanel: NSPanel {
                                                     chromeOnly: chromeOnly, chromeGroups: chromeGroups)
         }
         let label = state.rawValue + (chromeOnly && state == .expanded ? " (chrome only)" : "")
-        // Inflate by the hover halo: sides and downward, top stays flush.
-        var target = visible
-        target.origin.x -= Self.hoverMargin
-        target.size.width += Self.hoverMargin * 2
-        target.origin.y -= Self.hoverMargin
-        target.size.height += Self.hoverMargin
-
-        // The overlay must fit the frame it is being given. SwiftUI offers
-        // no complaint when it does not: NSHostingView centres an oversized
-        // root, which visibly shoves everything up under the screen edge
-        // while logging nothing — that silence is what let the chrome-only
-        // bar ship clipped. `.error`, so it persists in release builds.
-        // A HUD retract is exempt: the window holds the strip's height on
-        // purpose until the strip has closed, then shrinks to `target`.
-        if !Self.hudDropHandles(state: state, reserved: hudReserve > 0),
-           let fitting = hostingView?.fittingSize.height,
-           fitting > target.height + 0.5 {
-            Self.logger.error("Overlay overflows the panel: fitting height \(fitting, privacy: .public) > frame height \(target.height, privacy: .public) in state \(label, privacy: .public)")
-        }
-
-        let wasExpanded = currentState == .expanded
         let previousState = currentState
         currentState = state
         // The trackpad ticks as the notch snaps open — only on the way in,
         // and only when the hand is on the trackpad (the system's rule).
-        if state == .expanded && !wasExpanded {
+        if state == .expanded && previousState != .expanded {
             Haptics.perform(.alignment, performanceTime: .default)
         }
 
-        if Self.hudDropHandles(state: state, reserved: hudReserve > 0) {
-            applyHUDDrop(state: state, target: target, label: label)
+        let housing = Self.notchRect(on: screen)
+        let soft = state == .expanded && !chromeOnly
+        // An update in place (a second key press, a re-render at the same
+        // size) changes content, not the frame: no morph, no re-entrance.
+        if visible == visibleTarget, state == previousState, soft == geometry.soft {
             return
         }
-        releaseHUDReserve()
+        visibleTarget = visible
 
-        guard target != frame else { return }
-
-        // Every frame change from here on supersedes any animation still in
-        // flight; a completion only acts if it belongs to the latest one.
-        animationGeneration &+= 1
-        let generation = animationGeneration
-
-        // Hard rule 8: with Reduce Motion on, snap instead of animating.
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            setFrame(target, display: true)
-            Self.logger.notice("State \(label, privacy: .public) (reduced motion) at \(NSStringFromRect(target), privacy: .public)")
-            reevaluateHoverAfterFrameChange()
-            return
+        // Opening over the HUD drops its strip at once: the page takes the
+        // space. A page leaving for the HUD goes too: the strip needs it.
+        if state == .expanded || state == .peek {
+            hudView = nil
+            hudDeparting = false
         }
+        if state == .expanded || state == .hud { pageDeparting = false }
 
-        // The bounce is the *opening*: only on the way into expanded, like
-        // the haptic. An expanded-to-expanded resize (content re-measured,
-        // a navigation) takes the tidy curve below instead.
-        // The HUD takes no bounce: for a 30pt strip it read as a wobble
-        // (user, 2026-11-03). It morphs down and back up on the tidy curve.
-        if state == .expanded && !wasExpanded {
-            // Two-stage bounce: overshoot past the target in BOTH axes, then
-            // settle back. Explicit stages because window-frame animation
-            // clamps overshooting timing curves (control-point y > 1 was
-            // silently flattened — user never felt the bounce it promised).
-            // The sideways component of the overshoot is what makes opening
-            // read as blooming outward, not just dropping down.
-            // Sizes and timing: see `openOvershoot` and its neighbours.
-            var overshoot = target
-            overshoot.origin.x -= Self.openOvershoot.side
-            overshoot.size.width += Self.openOvershoot.side * 2
-            overshoot.origin.y -= Self.openOvershoot.down
-            overshoot.size.height += Self.openOvershoot.down
-
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = Self.openGrowDuration
-                let c = Self.openCurve
-                context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
-                self.animator().setFrame(overshoot, display: true)
-            }, completionHandler: { [weak self] in
-                // AppKit invokes animation completions on the main thread;
-                // assumeIsolated states that fact to the compiler (and traps
-                // if it were ever violated) without deferring a runloop turn
-                // the way Task would — the settle must start this tick or
-                // the bounce reads as a hitch.
-                MainActor.assumeIsolated {
-                    // A newer setState has taken over: settling to this
-                    // target now would drag the panel back to a stale frame.
-                    guard let self, self.animationGeneration == generation else { return }
-                    NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = Self.openSettleDuration
-                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        self.animator().setFrame(target, display: true)
-                    }, completionHandler: { [weak self] in
-                        MainActor.assumeIsolated { self?.settleCompleted(generation) }
-                    })
-                }
-            })
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        var motion = Self.morphMotion(from: previousState, to: state, reduceMotion: reduceMotion)
+        var overshoot = visible
+        overshoot.origin.x -= Self.openOvershoot.side
+        overshoot.size.width += Self.openOvershoot.side * 2
+        overshoot.origin.y -= Self.openOvershoot.down
+        overshoot.size.height += Self.openOvershoot.down
+        let target = Self.inflated(visible)
+        let reach = Self.inflated(motion == .open ? overshoot : visible)
+        let canvas: NSRect
+        if let grown = Self.morphCanvas(current: frame, reach: reach) {
+            canvas = grown
         } else {
-            // Into or out of a peek takes the peek's own quick curve; a peek
-            // turning into the open panel took the branch above.
-            let peeking = state == .peek || previousState == .peek
-            NSAnimationContext.runAnimationGroup({ context in
-                // Closing, wing transitions and expanded resizes ease out
-                // with no bounce so they read as tidy.
-                context.duration = peeking ? Self.peekDuration : Self.collapseDuration
-                let c = peeking ? Self.peekCurve : Self.collapseCurve
-                context.timingFunction = CAMediaTimingFunction(controlPoints: c.x1, c.y1, c.x2, c.y2)
-                animator().setFrame(target, display: true)
-            }, completionHandler: { [weak self] in
-                MainActor.assumeIsolated { self?.settleCompleted(generation) }
-            })
+            canvas = target
+            motion = .snap
         }
-        Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public)")
+
+        let anchor = housing.midX
+        geometry = NotchMorphGeometry(
+            anchorX: anchor - canvas.minX,
+            silhouette: Self.local(visible, anchor: anchor),
+            // A closing page keeps its place while the edge covers it.
+            page: state == .expanded ? Self.local(visible, anchor: anchor) : geometry.page,
+            wings: Self.local(Self.compactRect(housing: housing), anchor: anchor),
+            soft: soft,
+            motion: motion,
+            overshoot: Self.local(overshoot, anchor: anchor),
+            generation: geometry.generation &+ 1)
+        refreshOverlay()
+        if canvas != frame { snapFrame(canvas) }
+        Self.logger.notice("State \(label, privacy: .public) at \(NSStringFromRect(target), privacy: .public) (\(String(describing: motion), privacy: .public))")
+
+        let generation = geometry.generation
+        if motion == .snap {
+            settleMorph(generation, target: target, anchor: anchor)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + motion.duration + 0.03) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.settleMorph(generation, target: target, anchor: anchor)
+                }
+            }
+        }
     }
 
     /// The frame has settled somewhere new; let the hover view judge the
@@ -702,15 +662,6 @@ final class NotchPanel: NSPanel {
     private func reevaluateHoverAfterFrameChange() {
         (contentView as? NotchHoverView)?.reevaluateHoverAfterFrameChange(
             adoptStationaryCursor: currentState == .expanded)
-    }
-
-    /// An animation finished. Only the latest one's frame is where the panel
-    /// is staying, so only it re-checks the cursor; a superseded one's
-    /// completion (AppKit fires it when the newer animation cuts it short)
-    /// would judge the cursor against a frame in mid-flight.
-    private func settleCompleted(_ generation: Int) {
-        guard generation == animationGeneration else { return }
-        reevaluateHoverAfterFrameChange()
     }
 
     /// Clears hover outright: cancels any pending enter or exit and drops the

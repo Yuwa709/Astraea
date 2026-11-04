@@ -88,13 +88,8 @@ struct NotchOverlayView: View {
     /// housing. The gap between them is exactly the housing's deadzone.
     var leadingWing: AnyView?
     var trailingWing: AnyView?
-    /// The HUD strip's contents, drawn below the neck in the `.hud` state.
+    /// The HUD strip's contents, hung from the silhouette's bottom edge.
     var hud: AnyView?
-    /// Height the window holds below the silhouette for the HUD strip, and
-    /// whether the strip is down. `NotchPanel` owns both; see its
-    /// `hudDropHandles`.
-    var hudReserve: CGFloat = 0
-    var hudExtended = false
     /// The menu bar band, which the housing occupies. Content starts below it.
     var neckHeight: CGFloat = 32
     /// Play the emerge-from-the-notch entrance on this content.
@@ -106,12 +101,12 @@ struct NotchOverlayView: View {
     /// trailing holds caffeinate.
     var topLeadingAccessory: AnyView?
     var topTrailingAccessory: AnyView?
-    /// The camera housing's x-range in this overlay's own coordinates
-    /// (origin at the visible rect's leading edge). The chrome band is
-    /// positioned from it: the leading group ends a gutter before
-    /// `lowerBound`, the trailing group starts a gutter after `upperBound`,
-    /// so no button can be laid out behind the housing, where it would be
-    /// invisible and unclickable.
+    /// The camera housing's x-range in the page's own coordinates (origin
+    /// at the visible rect's leading edge). The chrome band is positioned
+    /// from it: the leading group ends a gutter before `lowerBound`, the
+    /// trailing group starts a gutter after `upperBound`, so no button can
+    /// be laid out behind the housing, where it would be invisible and
+    /// unclickable.
     ///
     /// A *clamp*, not an anchor: the groups hang off the panel's corners
     /// and are pushed inward only if they would otherwise reach the
@@ -128,26 +123,38 @@ struct NotchOverlayView: View {
     var panelWidth: CGFloat = 0
     var chromeGroups = NotchPanel.ChromeGroupWidths()
     /// The panel is open but has nothing to show below the neck: the band
-    /// is the only row. The content region must not render — its fixed
-    /// neck+40 of padding survives even an empty view, inflates the root
-    /// past the neck-height frame, and NSHostingView silently centres the
-    /// overflow, shoving the band up under the screen edge (the clipped-
-    /// buttons bug, measured 2026-09-01: root 82pt in a 42pt window).
+    /// is the only row, and the content region (neck+40 of fixed padding
+    /// even around an empty view) must not render.
     var chromeOnly: Bool = false
+    /// Where everything sits and what the silhouette is morphing to. Owned
+    /// by `NotchPanel`; see `NotchMorphGeometry`.
+    var geometry = NotchMorphGeometry()
 
     var body: some View {
-        // Expanded (has content) draws the softer card; compact, idle and
-        // the chrome-only bar keep the tighter silhouette — chrome-only is
-        // neck-height, where the 34pt expanded bottom radius reads as a
-        // blob rather than a bar.
-        let expanded = content != nil
-        ZStack(alignment: .top) {
-            HUDDrop(soft: expanded && !chromeOnly, hud: hud, reserve: hudReserve,
-                    extended: hudExtended, neckHeight: neckHeight)
-            if leadingWing != nil || trailingWing != nil {
-                wingsRow
+        // The root always takes exactly the window's size: every layer is
+        // an overlay, so nothing it draws can make the root larger than the
+        // window. NSHostingView centres an oversized root, which shoved the
+        // whole notch up under the bezel — the chrome-only bar (2026-09-01),
+        // the HUD (2026-11-03) and every page switch to a taller page
+        // (recorded 2026-11-03). Structurally impossible now.
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) {
+                NotchMorphCanvas(geometry: geometry,
+                                 neckHeight: neckHeight,
+                                 page: content != nil ? AnyView(pageLayer) : nil,
+                                 wings: leadingWing != nil || trailingWing != nil
+                                     ? AnyView(wingsRow) : nil,
+                                 hud: hud)
             }
-            if expanded, topLeadingAccessory != nil || topTrailingAccessory != nil {
+            .ignoresSafeArea()
+    }
+
+    /// The open panel's page: chrome band and content, laid out at the
+    /// page's final size whatever the silhouette is doing.
+    private var pageLayer: some View {
+        ZStack(alignment: .top) {
+            if topLeadingAccessory != nil || topTrailingAccessory != nil {
                 chromeBand
             }
             if let content, !chromeOnly {
@@ -160,12 +167,158 @@ struct NotchOverlayView: View {
                     .modifier(RevealFromNotch(enabled: revealContent))
             }
         }
-        // The hover halo: the panel frame is inflated by this margin, and
-        // the drawing insets back, leaving transparent hover-sensitive
-        // pixels around the silhouette. Top stays flush with the screen.
-        .padding(.horizontal, NotchPanel.hoverMargin)
-        .padding(.bottom, NotchPanel.hoverMargin)
-        .ignoresSafeArea()
+    }
+}
+
+/// Where the overlay draws, in the window's coordinates. Every rect is
+/// measured from the housing's centre (`anchorX` is that centre's x in the
+/// window), with its top on the screen edge: the window grows and shrinks
+/// around a morph, but these do not change with it, so nothing on screen
+/// moves when it does.
+struct NotchMorphGeometry: Equatable {
+    var anchorX: CGFloat = 0
+    /// The silhouette the notch is morphing to.
+    var silhouette: CGRect = .zero
+    /// Where the open panel's page sits. Fixed through a morph: the edge
+    /// uncovers and covers it, it never moves or reflows.
+    var page: CGRect = .zero
+    /// Where the wings sit: the compact frame, whatever the silhouette.
+    var wings: CGRect = .zero
+    /// The open card's softer corners.
+    var soft = false
+    var motion: NotchMorphMotion = .snap
+    /// Opening only: where the growth overshoots to before it settles.
+    var overshoot: CGRect = .zero
+    /// Bumped by every morph. A change without a new generation (the
+    /// window trimming back after one) re-lays out without animating.
+    var generation = 0
+}
+
+/// How the silhouette gets to its new frame. The app's existing curves,
+/// nothing new: see `NotchPanel.morphMotion`.
+enum NotchMorphMotion: Equatable {
+    /// Reduce Motion, or the panel moved screens.
+    case snap
+    /// Closing, page switches, wings, the HUD: the tidy ease-out.
+    case collapse
+    /// Into or out of the hover peek.
+    case peek
+    /// Into the open panel: grow past the target, then settle.
+    case open
+
+    var duration: TimeInterval {
+        switch self {
+        case .snap: return 0
+        case .collapse: return NotchPanel.collapseDuration
+        case .peek: return NotchPanel.peekDuration
+        case .open: return NotchPanel.openGrowDuration + NotchPanel.openSettleDuration
+        }
+    }
+}
+
+/// Morph, never reset (CLAUDE.md). One animated value, `drawn`, is the
+/// silhouette's frame; the black shape, the mask every layer is clipped to
+/// and the HUD strip all read it, so the edge and what it carries cannot
+/// come apart. Pages and wings sit still at their own frames and the edge
+/// sweeps over them. The window is already large enough for the whole
+/// morph (`NotchPanel` sees to that), because the hosting view does not
+/// re-lay out on every step of a window frame animation.
+private struct NotchMorphCanvas: View {
+    let geometry: NotchMorphGeometry
+    let neckHeight: CGFloat
+    let page: AnyView?
+    let wings: AnyView?
+    let hud: AnyView?
+
+    /// The silhouette as drawn. Nil until first layout.
+    @State private var drawn: CGRect?
+    /// The morph in flight, so an opening's settle stage can tell whether
+    /// a newer morph has taken over.
+    @State private var current = 0
+
+    var body: some View {
+        let rect = drawn ?? geometry.silhouette
+        let x = geometry.anchorX
+        ZStack(alignment: .topLeading) {
+            AnimatedSilhouette(soft: geometry.soft)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: x + rect.minX)
+            ZStack(alignment: .topLeading) {
+                if let wings {
+                    wings
+                        .frame(width: geometry.wings.width, height: neckHeight)
+                        .offset(x: x + geometry.wings.minX)
+                }
+                if let page {
+                    page
+                        .frame(width: geometry.page.width, height: geometry.page.height,
+                               alignment: .top)
+                        .offset(x: x + geometry.page.minX)
+                }
+                if let hud {
+                    // Hangs from the moving bottom edge, clipped to below
+                    // the neck: it rides down as the notch grows and slides
+                    // up into the notch as it shrinks. Never fades.
+                    let strip = NotchPanel.hudStripHeight
+                    hud
+                        .padding(.horizontal, NotchPanel.compactEdgeExtra + 14)
+                        .frame(width: rect.width, height: strip)
+                        .frame(width: rect.width, height: max(rect.height - neckHeight, 0),
+                               alignment: .bottom)
+                        .clipped()
+                        .offset(x: x + rect.minX, y: neckHeight)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Nothing outlives or outruns the black behind it.
+            .mask(alignment: .topLeading) {
+                AnimatedSilhouette(soft: geometry.soft, shadow: false)
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: x + rect.minX)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            drawn = geometry.silhouette
+            current = geometry.generation
+        }
+        .onChange(of: geometry) { old, new in
+            guard new.generation != old.generation else { return }
+            morph(to: new)
+        }
+    }
+
+    private func morph(to g: NotchMorphGeometry) {
+        current = g.generation
+        switch g.motion {
+        case .snap:
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { drawn = g.silhouette }
+        case .collapse:
+            withAnimation(NotchOverlayView.collapseAnimation) { drawn = g.silhouette }
+        case .peek:
+            withAnimation(Self.animation(NotchPanel.peekCurve, NotchPanel.peekDuration)) {
+                drawn = g.silhouette
+            }
+        case .open:
+            // Two stages, as the window used to: past the target in both
+            // axes, then back. The sideways part is what reads as blooming.
+            withAnimation(Self.animation(NotchPanel.openCurve, NotchPanel.openGrowDuration),
+                          completionCriteria: .logicallyComplete) {
+                drawn = g.overshoot
+            } completion: {
+                guard current == g.generation else { return }
+                withAnimation(.easeInOut(duration: NotchPanel.openSettleDuration)) {
+                    drawn = g.silhouette
+                }
+            }
+        }
+    }
+
+    private static func animation(_ c: (x1: Float, y1: Float, x2: Float, y2: Float),
+                                  _ duration: TimeInterval) -> Animation {
+        .timingCurve(Double(c.x1), Double(c.y1), Double(c.x2), Double(c.y2), duration: duration)
     }
 }
 
@@ -321,6 +474,8 @@ private struct AnimatedSilhouette: View {
     /// Whether the softer open-card radii are wanted: expanded, with content
     /// below the neck.
     let soft: Bool
+    /// The mask copy draws no shadow: it would leak content past the edge.
+    var shadow = true
 
     /// What is actually drawn, which lags `soft` for the length of a
     /// collapse. Nil until the first layout, when it adopts whatever state
@@ -345,7 +500,7 @@ private struct AnimatedSilhouette: View {
             bottomRadius: drawn ? NotchShape.expandedBottomRadius : NotchShape.compactBottomRadius
         )
         .fill(Color.black)
-        .shadow(color: .black.opacity(shadowShown ? 0.6 : 0),
+        .shadow(color: .black.opacity(shadow && shadowShown ? 0.6 : 0),
                 radius: Self.shadowRadius, y: Self.shadowOffset)
         .onAppear {
             drawnSoft = soft
@@ -365,55 +520,6 @@ private struct AnimatedSilhouette: View {
                     drawnSoft = false
                     shadowShown = false
                 }
-            }
-        }
-    }
-}
-
-/// The silhouette and the HUD strip, dropped together.
-///
-/// The window is already at the dropped size whenever `reserve` is nonzero;
-/// this draws the silhouette `reserve - drop` short of its bottom and hangs
-/// the strip from that edge. One animated value moves both, so the icon and
-/// bar ride the edge down and back up and can never be uncovered by it.
-/// The strip is clipped to the region below the neck: as the edge rises it
-/// slides up into the notch rather than fading. Same curve and duration
-/// both ways, the close's, with no bounce (user, 2026-11-03).
-private struct HUDDrop: View {
-    let soft: Bool
-    let hud: AnyView?
-    let reserve: CGFloat
-    let extended: Bool
-    let neckHeight: CGFloat
-
-    /// How far the strip is down, 0...reserve. Nil until first layout.
-    @State private var drop: CGFloat?
-
-    var body: some View {
-        let shown = min(drop ?? (extended ? reserve : 0), reserve)
-        let strip = NotchPanel.hudStripHeight
-        ZStack(alignment: .top) {
-            AnimatedSilhouette(soft: soft)
-                .padding(.bottom, reserve - shown)
-            if let hud, reserve > 0 {
-                hud
-                    .padding(.horizontal, NotchPanel.compactEdgeExtra + 14)
-                    .frame(height: strip)
-                    .offset(y: shown - strip)
-                    .frame(height: strip, alignment: .top)
-                    .clipped()
-                    .padding(.top, neckHeight)
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
-        }
-        .onAppear { drop = extended ? reserve : 0 }
-        .onChange(of: extended) { _, isDown in
-            let target = isDown ? strip : 0
-            // Hard rule 8: Reduce Motion snaps.
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                drop = target
-            } else {
-                withAnimation(NotchOverlayView.collapseAnimation) { drop = target }
             }
         }
     }

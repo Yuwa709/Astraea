@@ -75,15 +75,28 @@ final class SystemHUDTests: XCTestCase {
         XCTAssertEqual(hud.height, housing.height + NotchPanel.hudStripHeight)
     }
 
-    func testHUDDropOwnsTheDropAndOnlyItsOwnRetract() {
-        XCTAssertTrue(NotchPanel.hudDropHandles(state: .hud, reserved: false))
-        XCTAssertTrue(NotchPanel.hudDropHandles(state: .compact, reserved: true))
-        XCTAssertTrue(NotchPanel.hudDropHandles(state: .idle, reserved: true))
-        XCTAssertFalse(NotchPanel.hudDropHandles(state: .compact, reserved: false),
-                       "an ordinary collapse is not a HUD retract")
-        XCTAssertFalse(NotchPanel.hudDropHandles(state: .expanded, reserved: true),
-                       "opening over a HUD animates the frame as usual")
-        XCTAssertFalse(NotchPanel.hudDropHandles(state: .peek, reserved: true))
+    /// A morph runs in a window that reaches both frames, and never in
+    /// one stretched from another screen.
+    func testMorphCanvasCoversBothFramesOnTheSameEdge() {
+        let housing = NSRect(x: 600, y: 950, width: 185, height: 32)
+        let compact = NotchPanel.compactRect(housing: housing)
+        let open = NotchPanel.expandedRect(housing: housing, contentSize: CGSize(width: 500, height: 300))
+        let canvas = NotchPanel.morphCanvas(current: compact, reach: open)
+        XCTAssertEqual(canvas, compact.union(open))
+        XCTAssertEqual(canvas?.maxY, housing.maxY, "top stays on the screen edge")
+        let elsewhere = NSRect(x: -1500, y: 300, width: 293, height: 42)
+        XCTAssertNil(NotchPanel.morphCanvas(current: elsewhere, reach: open),
+                     "another screen: nothing to morph from, snap")
+    }
+
+    func testMorphMotionPerTransition() {
+        XCTAssertEqual(NotchPanel.morphMotion(from: .peek, to: .expanded, reduceMotion: false), .open)
+        XCTAssertEqual(NotchPanel.morphMotion(from: .expanded, to: .expanded, reduceMotion: false), .collapse,
+                       "a page switch takes the tidy curve, no bounce")
+        XCTAssertEqual(NotchPanel.morphMotion(from: .compact, to: .peek, reduceMotion: false), .peek)
+        XCTAssertEqual(NotchPanel.morphMotion(from: .compact, to: .hud, reduceMotion: false), .collapse,
+                       "the HUD takes no bounce")
+        XCTAssertEqual(NotchPanel.morphMotion(from: .expanded, to: .compact, reduceMotion: true), .snap)
     }
 
     // MARK: - Volume keys

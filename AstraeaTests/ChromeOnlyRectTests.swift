@@ -73,53 +73,31 @@ final class ChromeOnlyRectTests: XCTestCase {
         }
     }
 
-    /// The overlay itself, configured exactly as the coordinator configures
-    /// it in chrome-only, must fit the frame the rect maths hands the panel:
-    /// fitting height == panel content height (bar + hover halo), nothing
-    /// left over for NSHostingView to centre. This is the layout half of the
-    /// clipped-buttons bug; the rect half is above.
-    func testOverlayFittingSizeMatchesThePanelFrame() {
+    /// The overlay never asks for more than the window: NSHostingView
+    /// centres an oversized root, which shoved the band up under the
+    /// screen edge (the clipped-buttons bug, 2026-09-01). Every layer is an
+    /// overlay now, so even the content region's fixed padding cannot.
+    func testOverlayNeverOutgrowsTheBar() {
         for housing in housings {
             let rect = chromeOnlyRect(housing: housing)
             let housingLocal = (housing.minX - rect.minX)...(housing.maxX - rect.minX)
-            let overlay = NotchOverlayView(
-                content: AnyView(VStack(spacing: 8) { EmptyView() }),
-                leadingWing: nil, trailingWing: nil,
-                neckHeight: housing.height, revealContent: false,
-                topLeadingAccessory: leadingGroup(),
-                topTrailingAccessory: trailingGroup(),
-                housingLocalRange: housingLocal,
-                panelWidth: rect.width,
-                chromeGroups: measuredGroups(),
-                chromeOnly: true)
-            let fitting = NSHostingView(rootView: overlay).fittingSize
-            XCTAssertEqual(fitting.height, rect.height + NotchPanel.hoverMargin,
-                           accuracy: 0.5, "housing \(housing)")
-            XCTAssertLessThanOrEqual(fitting.width, rect.width + NotchPanel.hoverMargin * 2 + 0.5,
-                                     "band overflows the frame sideways: housing \(housing)")
-        }
-    }
-
-    /// Without the flag the content region's fixed padding alone overflows
-    /// the bar — the regression this file exists to hold the line on.
-    func testContentRegionIsWhatTheFlagSuppresses() {
-        for housing in housings {
-            let rect = chromeOnlyRect(housing: housing)
-            let housingLocal = (housing.minX - rect.minX)...(housing.maxX - rect.minX)
-            let overlay = NotchOverlayView(
-                content: AnyView(VStack(spacing: 8) { EmptyView() }),
-                leadingWing: nil, trailingWing: nil,
-                neckHeight: housing.height, revealContent: false,
-                topLeadingAccessory: leadingGroup(),
-                topTrailingAccessory: trailingGroup(),
-                housingLocalRange: housingLocal,
-                panelWidth: rect.width,
-                chromeGroups: measuredGroups(),
-                chromeOnly: false)
-            let fitting = NSHostingView(rootView: overlay).fittingSize
-            XCTAssertGreaterThan(fitting.height,
-                                 housing.height + NotchPanel.hoverMargin + 20,
-                                 "padding no longer overflows; is this test stale?")
+            for chromeOnly in [true, false] {
+                let overlay = NotchOverlayView(
+                    content: AnyView(VStack(spacing: 8) { EmptyView() }),
+                    leadingWing: nil, trailingWing: nil,
+                    neckHeight: housing.height, revealContent: false,
+                    topLeadingAccessory: leadingGroup(),
+                    topTrailingAccessory: trailingGroup(),
+                    housingLocalRange: housingLocal,
+                    panelWidth: rect.width,
+                    chromeGroups: measuredGroups(),
+                    chromeOnly: chromeOnly)
+                let fitting = NSHostingView(rootView: overlay).fittingSize
+                XCTAssertLessThanOrEqual(fitting.height, rect.height + NotchPanel.hoverMargin + 0.5,
+                                         "housing \(housing), chromeOnly \(chromeOnly)")
+                XCTAssertLessThanOrEqual(fitting.width, rect.width + NotchPanel.hoverMargin * 2 + 0.5,
+                                         "housing \(housing), chromeOnly \(chromeOnly)")
+            }
         }
     }
 
